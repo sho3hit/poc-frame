@@ -103,6 +103,7 @@
     border-radius: 5px; padding: 10px 12px;
     font-size: 11px; color: var(--text); line-height: 1.7;
     margin-bottom: 14px; min-height: 48px;
+    white-space: pre-wrap;
   }
   .desc-box span { color: var(--accent2); }
 
@@ -155,6 +156,7 @@
     <option value="tc08a">TC08a · confirm() dialog type</option>
     <option value="tc08b">TC08b · prompt() dialog type</option>
     <option value="tc08c">TC08c · beforeunload dialog type</option>
+    <option value="tc09">TC09 · Sandboxed iframe variants ⚑ needs parent change</option>
     <option value="tc10">TC10 · Immediate alert (no setTimeout)</option>
     <option value="tc11">TC11 · Multi-navigation before alert</option>
     <option value="tc12">TC12 · javascript:void(0) + win.alert()</option>
@@ -198,6 +200,7 @@
     tc08c: 'Sets win.onbeforeunload, then navigates the window away. The beforeunload dialog fires on navigation — tests a completely separate code path from alert/confirm/prompt.',
     tc10: 'Calls win.alert() synchronously with NO setTimeout. The window\'s NavigationEntry may not be committed yet — tests the race condition at its worst point.',
     tc11: 'Opens data:,First, waits, navigates to data:,Second, waits, then calls alert(). A second navigation creates a new NavigationEntry — tests whether the fix handles subsequent navigations correctly.',
+    tc09: '⚑ REQUIRES PARENT PAGE CHANGE — This test cannot run from inside the iframe itself. The sandbox attribute must be set on the <iframe> tag in parent-page.html. See the two variants below:\n\nVariant A (null origin): <iframe sandbox="allow-scripts allow-popups" src="poc-frame.html">\nVariant B (escaped sandbox): <iframe sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" src="poc-frame.html">\n\nAfter changing the parent, run any of TC01–TC04 to test. Variant A popup gets a null/opaque origin. Variant B popup escapes sandbox and gets a real origin. Check which origin the dialog title shows.',
     tc12: 'Opens javascript:void(0) (no inline dialog), then calls win.alert() cross-window after 200ms. Tests two-step invocation vs. inline dialog-in-URL.',
   };
 
@@ -329,6 +332,27 @@
             }, 400);
             log('TC08c: beforeunload handler set. Navigating in 400ms...', 'info');
           }, 100);
+          break;
+        }
+
+        case 'tc09': {
+          // Cannot run from inside iframe — show instructions
+          log('TC09 requires a change in parent-page.html — see description above.', 'err');
+          log('Variant A: sandbox="allow-scripts allow-popups"', 'info');
+          log('Variant B: sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"', 'info');
+          log('After updating parent-page.html, run TC01 or TC03 to test.', 'info');
+          // Show a visible alert explaining what to do
+          alert(
+            'TC09 — Sandboxed iframe test\n\n' +
+            'This test cannot be triggered from inside the iframe.\n\n' +
+            'You need to change the <iframe> tag in parent-page.html:\n\n' +
+            'Variant A (null/opaque origin):\n' +
+            'sandbox="allow-scripts allow-popups"\n\n' +
+            'Variant B (escaped sandbox):\n' +
+            'sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"\n\n' +
+            'After changing the parent, run TC01 or TC03 to test.\n' +
+            'Check dialog title — does it show null, iframe origin, or top-frame origin?'
+          );
           break;
         }
 
