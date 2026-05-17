@@ -173,9 +173,9 @@
   <!-- What to check -->
   <div class="log-title">What to check in the dialog</div>
   <div class="desc-box" style="margin-bottom:10px;">
-    Look at the <span>dialog title bar</span>.<br>
-    ❌ <strong style="color:#ff4d6d">VULNERABLE</strong> → title says <code style="color:#ffb347">localhost:8080 says</code> (top frame — wrong)<br>
-    ✅ <strong style="color:#00e5a0">SAFE</strong> → title says <code style="color:#00e5a0">An embedded page at localhost:8081 says</code>
+    Look at the <span>actual Chrome dialog popup title bar</span> (not this page).<br><br>
+    ❌ <strong style="color:#ff4d6d">VULNERABLE</strong> → dialog title says <code style="color:#ffb347" id="vuln-label">...</code> (top frame — wrong)<br>
+    ✅ <strong style="color:#00e5a0">SAFE</strong> → dialog title says <code style="color:#00e5a0" id="safe-label">...</code> (iframe — correct)
   </div>
 
   <!-- Activity log -->
@@ -186,6 +186,30 @@
   const W = 'width=800,height=400,top=80,left=100';
   const myOrigin = window.location.origin;
   document.getElementById('frame-origin').textContent = myOrigin;
+
+  // Derive top-frame origin from referrer or postMessage
+  // Use referrer as best guess for top frame origin label
+  let topOrigin = '(top frame origin)';
+  try {
+    if (document.referrer) {
+      topOrigin = new URL(document.referrer).origin;
+    } else if (window.parent !== window) {
+      // Try postMessage approach — send request to parent
+      window.parent.postMessage('give-origin', '*');
+    }
+  } catch(e) {}
+
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'top-origin') {
+      topOrigin = e.data.origin;
+      document.getElementById('vuln-label').textContent = topOrigin + ' says  ← (top frame hostname shown — WRONG)';
+      document.getElementById('safe-label').textContent = 'An embedded page at ' + myOrigin + ' says  ← (iframe hostname — CORRECT)';
+    }
+  });
+
+  // Set initial labels using referrer
+  document.getElementById('vuln-label').textContent = topOrigin + ' says  ← (top frame hostname shown — WRONG)';
+  document.getElementById('safe-label').textContent = 'An embedded page at ' + myOrigin + ' says  ← (iframe hostname — CORRECT)';
 
   const descriptions = {
     tc01: 'Opens a popup using a <javascript:> URL. The alert() runs immediately inside the new window. Checks if dialog title shows this iframe\'s origin or the top frame\'s origin.',
