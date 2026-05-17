@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Split View PoC Frame</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d0810;
+    --surface: #130f18;
+    --border: #221828;
+    --accent: #ff4d6d;
+    --accent2: #00e5ff;
+    --accent3: #7b61ff;
+    --warn: #ffb347;
+    --text: #c9d1e0;
+    --text-dim: #5a4a60;
+    --text-bright: #eef2ff;
+    --pass: #00e5a0;
+    --fail: #ff4d6d;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;700;800&display=swap');
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 16px;
+    min-height: 100%;
+  }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.2);
+    color: var(--accent2); font-size: 10px; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 3px 10px; border-radius: 4px; margin-bottom: 10px;
+  }
+
+  h2 {
+    font-family: var(--sans);
+    font-size: 15px; font-weight: 800; color: var(--text-bright);
+    margin-bottom: 4px;
+  }
+  h2 span { color: var(--fail); }
+
+  .origin-row {
+    display: flex; align-items: center; gap: 8px;
+    margin: 10px 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px; padding: 7px 12px; font-size: 11px;
+  }
+  .origin-row .lbl { color: var(--text-dim); }
+  .origin-row .val { color: var(--fail); font-weight: 700; }
+
+  /* Split view diagram */
+  .splitview-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    margin: 12px 0;
+    font-size: 10px;
+  }
+  .splitview-diagram .title {
+    color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: 0.1em; font-weight: 700; margin-bottom: 8px;
+  }
+  .split-row {
+    display: grid; grid-template-columns: 1fr 4px 1fr;
+    gap: 0; height: 52px;
+    border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+  }
+  .split-pane {
+    padding: 6px 8px; font-size: 10px; line-height: 1.5;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .split-pane.left { background: rgba(255,77,109,0.08); }
+  .split-pane.right { background: rgba(0,229,255,0.06); }
+  .split-divider { background: var(--border); }
+  .split-pane .pane-label { font-weight: 700; margin-bottom: 2px; }
+  .split-pane.left .pane-label { color: var(--fail); }
+  .split-pane.right .pane-label { color: var(--accent2); }
+
+  /* Steps */
+  .steps-box {
+    background: rgba(255,179,71,0.05);
+    border: 1px solid rgba(255,179,71,0.15);
+    border-left: 3px solid var(--warn);
+    border-radius: 5px;
+    padding: 10px 12px;
+    margin: 10px 0;
+    font-size: 11px;
+    line-height: 1.8;
+    color: var(--warn);
+  }
+  .steps-box strong { color: var(--text-bright); }
+
+  /* TC cards */
+  .tc-grid { display: grid; gap: 8px; margin: 12px 0; }
+
+  .tc-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .tc-card:hover { border-color: rgba(255,77,109,0.25); }
+
+  .tc-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px;
+    cursor: pointer; user-select: none;
+    border-bottom: 1px solid transparent;
+  }
+  .tc-header.open { border-bottom-color: var(--border); }
+
+  .tc-num {
+    width: 22px; height: 22px; border-radius: 4px;
+    background: rgba(255,77,109,0.08);
+    border: 1px solid rgba(255,77,109,0.2);
+    color: var(--fail); font-size: 9px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .tc-name {
+    font-family: var(--sans); font-size: 12px;
+    font-weight: 700; color: var(--text-bright); flex: 1;
+  }
+  .tc-tag {
+    font-size: 9px; padding: 2px 7px; border-radius: 3px;
+    text-transform: uppercase; letter-spacing: 0.07em; font-weight: 600;
+  }
+  .tag-sv { background: rgba(0,229,255,0.08); color: var(--accent2); border: 1px solid rgba(0,229,255,0.2); }
+  .tag-opener { background: rgba(123,97,255,0.1); color: var(--accent3); border: 1px solid rgba(123,97,255,0.2); }
+  .tag-reverse { background: rgba(255,179,71,0.1); color: var(--warn); border: 1px solid rgba(255,179,71,0.2); }
+  .tag-nav { background: rgba(0,229,160,0.08); color: var(--pass); border: 1px solid rgba(0,229,160,0.2); }
+
+  .chevron { color: var(--text-dim); font-size: 10px; transition: transform 0.2s; }
+  .tc-header.open .chevron { transform: rotate(180deg); }
+
+  .tc-body { padding: 12px; display: none; }
+  .tc-body.open { display: block; }
+
+  .tc-desc {
+    font-size: 11px; color: var(--text); line-height: 1.7;
+    margin-bottom: 10px;
+  }
+
+  .what-to-check {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    margin-bottom: 10px;
+  }
+  .check-item {
+    border-radius: 4px; padding: 8px 10px; font-size: 10px; line-height: 1.5;
+  }
+  .check-item.vuln {
+    background: rgba(255,77,109,0.06);
+    border: 1px solid rgba(255,77,109,0.2);
+    color: var(--fail);
+  }
+  .check-item.safe {
+    background: rgba(0,229,160,0.05);
+    border: 1px solid rgba(0,229,160,0.15);
+    color: var(--pass);
+  }
+  .check-item .cl { font-weight: 700; margin-bottom: 3px; font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .check-item .cv { color: var(--text); }
+
+  .step-list { margin-bottom: 10px; }
+  .step-list .sl-title {
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--text-dim); font-weight: 700; margin-bottom: 6px;
+  }
+  .sl { display: flex; gap: 8px; margin-bottom: 5px; font-size: 11px; align-items: flex-start; }
+  .sl-n {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: rgba(0,229,255,0.08); color: var(--accent2);
+    font-size: 9px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;
+  }
+
+  pre {
+    background: #080608; border: 1px solid var(--border);
+    border-radius: 5px; padding: 10px 12px;
+    font-size: 10px; overflow-x: auto;
+    color: #a0b0d0; line-height: 1.7; margin-bottom: 8px;
+  }
+  .kw { color: #7b61ff; }
+  .str { color: #00e5a0; }
+  .fn { color: #00bcd4; }
+  .cm { color: #3a4a6a; font-style: italic; }
+  .num { color: var(--warn); }
+
+  .run-btn {
+    width: 100%;
+    background: rgba(255,77,109,0.1);
+    border: 1px solid rgba(255,77,109,0.3);
+    color: var(--fail);
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    padding: 9px; border-radius: 5px; cursor: pointer;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    transition: background 0.15s; margin-bottom: 0;
+  }
+  .run-btn:hover { background: rgba(255,77,109,0.2); }
+
+  .divider { height: 1px; background: var(--border); margin: 12px 0; }
+
+  .log-title {
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--text-dim); font-weight: 700; margin-bottom: 5px;
+  }
+  .log {
+    background: #080608; border: 1px solid var(--border);
+    border-radius: 5px; padding: 8px 10px;
+    min-height: 60px; max-height: 100px; overflow-y: auto;
+    font-size: 10px; line-height: 1.8;
+  }
+  .log-entry { margin-bottom: 1px; }
+  .log-entry.ok { color: var(--pass); }
+  .log-entry.err { color: var(--fail); }
+  .log-entry.info { color: var(--accent2); }
+
+  .result-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px; padding: 10px 12px;
+    font-size: 11px; color: var(--text); line-height: 1.7;
+    margin: 10px 0;
+    white-space: pre-wrap;
+  }
+  .result-box span { color: var(--accent2); }
+</style>
+</head>
+<body>
+
+  <div class="badge">Split View PoC · Chrome Mac · Cross-Origin iframe</div>
+  <h2>Split View <span>Origin Spoof Tests</span></h2>
+
+  <div class="origin-row">
+    <span class="lbl">iframe origin:</span>
+    <span class="val" id="frame-origin">loading...</span>
+  </div>
+
+  <!-- Split view setup diagram -->
+  <div class="splitview-diagram">
+    <div class="title">Required Chrome Split View Setup</div>
+    <div class="split-row">
+      <div class="split-pane left">
+        <div class="pane-label">LEFT TAB</div>
+        <div>parent-page.html</div>
+        <div style="color:var(--text-dim)">1.hackeronce.com</div>
+      </div>
+      <div class="split-divider"></div>
+      <div class="split-pane right">
+        <div class="pane-label">RIGHT TAB</div>
+        <div>Opened by window.open()</div>
+        <div style="color:var(--text-dim)">new tab / popup</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Setup instructions -->
+  <div class="steps-box">
+    <strong>One-time setup before running tests:</strong><br>
+    1. Open <code>parent-page.html</code> in Chrome<br>
+    2. Right-click the browser tab → <strong>"Move tab to new window"</strong><br>
+    3. Drag that new window to the LEFT half of your screen (macOS Split View)<br>
+    4. The test-opened tab will appear on the RIGHT side automatically<br>
+    5. Now run each test case below using the button
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Test cases -->
+  <div class="tc-grid">
+
+    <!-- SV01 -->
+    <div class="tc-card">
+      <div class="tc-header" onclick="toggleCard(this)">
+        <div class="tc-num">SV1</div>
+        <div class="tc-name">window.open() → dialog in split tab</div>
+        <span class="tc-tag tag-sv">Split View</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Opens a new tab via <code>javascript:</code> URL from the cross-origin iframe.
+          In Chrome split view, this tab opens on the RIGHT side. The dialog fires
+          immediately inside that new tab. Check what origin the dialog title shows.
+        </div>
+        <div class="step-list">
+          <div class="sl-title">Steps</div>
+          <div class="sl"><div class="sl-n">1</div>Set up Chrome split view (see above)</div>
+          <div class="sl"><div class="sl-n">2</div>Click Run below — new tab opens on RIGHT side</div>
+          <div class="sl"><div class="sl-n">3</div>Dialog appears in right tab — read the title bar</div>
+          <div class="sl"><div class="sl-n">4</div>Note: left tab = <code>1.hackeronce.com</code>, right tab = opened by iframe</div>
+        </div>
+        <div class="what-to-check">
+          <div class="check-item vuln"><div class="cl">❌ Vulnerable</div><div class="cv">Right tab dialog says:<br><code>1.hackeronce.com says</code></div></div>
+          <div class="check-item safe"><div class="cl">✅ Safe</div><div class="cv">Right tab dialog says:<br><code>sho3hit.github.io says</code></div></div>
+        </div>
+        <pre><span class="cm">// Iframe opens javascript: URL — dialog fires in right split tab</span>
+<span class="kw">window</span>.<span class="fn">open</span>(
+  <span class="str">'javascript:alert("SV1 Split View\\nDialog in right tab\\nwin.origin: "+window.origin)'</span>,
+  <span class="str">'_blank'</span>
+);</pre>
+        <button class="run-btn" onclick="event.stopPropagation(); runSV(1)">▶ RUN SV1</button>
+      </div>
+    </div>
+
+    <!-- SV02 -->
+    <div class="tc-card">
+      <div class="tc-header" onclick="toggleCard(this)">
+        <div class="tc-num">SV2</div>
+        <div class="tc-name">win.alert() called from left tab to right tab</div>
+        <span class="tc-tag tag-opener">Cross-Tab</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Opens <code>data:,Hello</code> in right split tab, then the iframe (in left tab)
+          calls <code>win.alert()</code> on the right tab's window object.
+          The dialog appears in the right tab but was <em>initiated from the left tab's iframe</em>.
+          This is the cross-tab equivalent of the original bug — tests whether
+          split view changes origin attribution.
+        </div>
+        <div class="step-list">
+          <div class="sl-title">Steps</div>
+          <div class="sl"><div class="sl-n">1</div>Click Run — data:,Hello opens in RIGHT tab</div>
+          <div class="sl"><div class="sl-n">2</div>After 500ms, alert fires in RIGHT tab</div>
+          <div class="sl"><div class="sl-n">3</div>Look at dialog title in the RIGHT tab</div>
+        </div>
+        <div class="what-to-check">
+          <div class="check-item vuln"><div class="cl">❌ Vulnerable</div><div class="cv">Right tab dialog says:<br><code>1.hackeronce.com says</code><br>(top frame of LEFT tab leaked)</div></div>
+          <div class="check-item safe"><div class="cl">✅ Safe</div><div class="cv">Right tab dialog says:<br><code>sho3hit.github.io says</code><br>(iframe origin — correct)</div></div>
+        </div>
+        <pre><span class="cm">// Open data: page in right split tab, then call alert() cross-tab</span>
+<span class="kw">var</span> win = <span class="kw">window</span>.<span class="fn">open</span>(<span class="str">'data:,Hello'</span>, <span class="str">'_blank'</span>);
+<span class="fn">setTimeout</span>(() => {
+  win.<span class="fn">alert</span>(<span class="str">'SV2: Cross-tab alert\nCalled from left tab iframe\niframe origin: '</span> + <span class="kw">window</span>.origin);
+}, <span class="num">500</span>);</pre>
+        <button class="run-btn" onclick="event.stopPropagation(); runSV(2)">▶ RUN SV2</button>
+      </div>
+    </div>
+
+    <!-- SV03 -->
+    <div class="tc-card">
+      <div class="tc-header" onclick="toggleCard(this)">
+        <div class="tc-num">SV3</div>
+        <div class="tc-name">Reverse — right tab calls alert() on opener (left tab)</div>
+        <span class="tc-tag tag-reverse">Reverse Direction</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Opens a <code>javascript:</code> page in the right tab that calls
+          <code>window.opener.alert()</code> — triggering a dialog on the LEFT tab (the parent page)
+          from the RIGHT tab. Tests if the reverse direction also confuses origin attribution.
+          The dialog fires on <code>1.hackeronce.com</code> but was initiated by the right tab.
+        </div>
+        <div class="step-list">
+          <div class="sl-title">Steps</div>
+          <div class="sl"><div class="sl-n">1</div>Click Run — right tab opens and immediately calls alert() on LEFT tab</div>
+          <div class="sl"><div class="sl-n">2</div>Dialog appears in LEFT tab (parent page)</div>
+          <div class="sl"><div class="sl-n">3</div>Check: does it say the opener's origin or the initiator's origin?</div>
+        </div>
+        <div class="what-to-check">
+          <div class="check-item vuln"><div class="cl">❌ Interesting</div><div class="cv">Left tab dialog says anything other than <code>1.hackeronce.com</code> — wrong origin shown on top frame</div></div>
+          <div class="check-item safe"><div class="cl">✅ Expected</div><div class="cv">Left tab dialog says <code>1.hackeronce.com says</code> (correct — it IS the left tab's origin)</div></div>
+        </div>
+        <pre><span class="cm">// Right tab calls alert() BACK on the opener (left tab)</span>
+<span class="kw">window</span>.<span class="fn">open</span>(
+  <span class="str">'javascript:window.opener && window.opener.alert("SV3: Reverse\\nRight tab called alert() on opener\\nThis tab origin: "+window.origin)'</span>,
+  <span class="str">'_blank'</span>
+);</pre>
+        <button class="run-btn" onclick="event.stopPropagation(); runSV(3)">▶ RUN SV3</button>
+      </div>
+    </div>
+
+    <!-- SV04 -->
+    <div class="tc-card">
+      <div class="tc-header" onclick="toggleCard(this)">
+        <div class="tc-num">SV4</div>
+        <div class="tc-name">Named target reuse across split tabs</div>
+        <span class="tc-tag tag-nav">Named Target</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Opens a named target tab (<code>_splitTarget</code>) twice.
+          First open navigates it to <code>data:,First</code>.
+          Second open reuses the same tab and navigates to a <code>javascript:</code> URL.
+          Tests whether reusing a named tab changes NavigationEntry
+          state and origin attribution.
+        </div>
+        <div class="step-list">
+          <div class="sl-title">Steps</div>
+          <div class="sl"><div class="sl-n">1</div>Click Run — right tab opens as "data:,First"</div>
+          <div class="sl"><div class="sl-n">2</div>After 800ms — same tab navigates to javascript:alert()</div>
+          <div class="sl"><div class="sl-n">3</div>Check dialog title in right tab — second navigation origin</div>
+        </div>
+        <div class="what-to-check">
+          <div class="check-item vuln"><div class="cl">❌ Vulnerable</div><div class="cv">After reuse, dialog shows top frame origin instead of iframe origin</div></div>
+          <div class="check-item safe"><div class="cl">✅ Safe</div><div class="cv">Dialog still shows <code>sho3hit.github.io says</code> after tab reuse</div></div>
+        </div>
+        <pre><span class="cm">// First open — named target tab created</span>
+<span class="kw">window</span>.<span class="fn">open</span>(<span class="str">'data:,First'</span>, <span class="str">'_splitTarget'</span>);
+
+<span class="cm">// Second open — reuses same named tab, now javascript: URL</span>
+<span class="fn">setTimeout</span>(() => {
+  <span class="kw">window</span>.<span class="fn">open</span>(
+    <span class="str">'javascript:alert("SV4: Named target reused\\nwin.origin: "+window.origin)'</span>,
+    <span class="str">'_splitTarget'</span>
+  );
+}, <span class="num">800</span>);</pre>
+        <button class="run-btn" onclick="event.stopPropagation(); runSV(4)">▶ RUN SV4</button>
+      </div>
+    </div>
+
+    <!-- SV05 -->
+    <div class="tc-card">
+      <div class="tc-header" onclick="toggleCard(this)">
+        <div class="tc-num">SV5</div>
+        <div class="tc-name">Open → snap to split → then trigger dialog</div>
+        <span class="tc-tag tag-sv">Split Timing</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Opens a <code>data:</code> tab, waits <strong>3 seconds</strong> (giving you time to manually
+          snap it to split view), then triggers the dialog. Tests whether the act of
+          snapping a tab into split view changes Chrome's process model or
+          NavigationEntry state enough to affect origin attribution.
+        </div>
+        <div class="step-list">
+          <div class="sl-title">Steps</div>
+          <div class="sl"><div class="sl-n">1</div>Click Run — new tab opens (data:,Hello)</div>
+          <div class="sl"><div class="sl-n">2</div><strong>Quickly drag that tab into split view</strong> (3 seconds to do this)</div>
+          <div class="sl"><div class="sl-n">3</div>After 3s — dialog auto-fires in that tab</div>
+          <div class="sl"><div class="sl-n">4</div>Check: did snapping to split view change origin shown?</div>
+        </div>
+        <div class="what-to-check">
+          <div class="check-item vuln"><div class="cl">❌ Interesting</div><div class="cv">Dialog shows different origin after snap vs before snap</div></div>
+          <div class="check-item safe"><div class="cl">✅ Expected</div><div class="cv">Snapping to split view has no effect — origin stays consistent</div></div>
+        </div>
+        <pre><span class="cm">// 3s delay — manually snap the new tab to split view in that time</span>
+<span class="kw">var</span> win = <span class="kw">window</span>.<span class="fn">open</span>(<span class="str">'data:,Hello'</span>, <span class="str">'_blank'</span>);
+<span class="fn">setTimeout</span>(() => {
+  win.<span class="fn">alert</span>(<span class="str">'SV5: Post-snap dialog\nDid snapping change origin?\niframe origin: '</span> + <span class="kw">window</span>.origin);
+}, <span class="num">3000</span>); <span class="cm">// 3 seconds — snap the tab NOW</span></pre>
+        <button class="run-btn" onclick="event.stopPropagation(); runSV(5)">▶ RUN SV5 (snap tab within 3s)</button>
+      </div>
+    </div>
+
+    <!-- SV06 -->
+    <div class="tc-card">
+      <div class="tc-header" onclick="toggleCard(this)">
+        <div class="tc-num">SV6</div>
+        <div class="tc-name">confirm() and prompt() in split right tab</div>
+        <span class="tc-tag tag-sv">Dialog Types</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Tests <code>confirm()</code> and <code>prompt()</code> dialog types in the split view
+          right tab. Each dialog type has an independent code path in Chrome's browser process.
+          Run this after SV1/SV2 to confirm all dialog types behave consistently in split view.
+        </div>
+        <div class="what-to-check">
+          <div class="check-item vuln"><div class="cl">❌ Vulnerable</div><div class="cv">Any dialog type shows top frame origin in right tab</div></div>
+          <div class="check-item safe"><div class="cl">✅ Safe</div><div class="cv">All dialog types show <code>sho3hit.github.io says</code></div></div>
+        </div>
+        <pre><span class="cm">// Open right tab, then fire confirm() and prompt() cross-tab</span>
+<span class="kw">var</span> win = <span class="kw">window</span>.<span class="fn">open</span>(<span class="str">'data:,Hello'</span>, <span class="str">'_blank'</span>);
+<span class="fn">setTimeout</span>(() => {
+  win.<span class="fn">confirm</span>(<span class="str">'SV6a: confirm() in split right tab\niframe: '</span> + <span class="kw">window</span>.origin);
+  win.<span class="fn">prompt</span>(<span class="str">'SV6b: prompt() in split right tab\niframe: '</span> + <span class="kw">window</span>.origin, <span class="str">''</span>);
+}, <span class="num">500</span>);</pre>
+        <button class="run-btn" onclick="event.stopPropagation(); runSV(6)">▶ RUN SV6</button>
+      </div>
+    </div>
+
+    <!-- SV07 -->
+    <div class="tc-card">
+      <div class="tc-header" onclick="toggleCard(this)">
+        <div class="tc-num">SV7</div>
+        <div class="tc-name">Right tab navigates cross-origin, then dialog fires</div>
+        <span class="tc-tag tag-nav">Cross-Origin Nav</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Opens right tab to <code>data:,Hello</code>, then navigates it to a real cross-origin page
+          (<code>https://example.com</code>), waits for load, then tries to call
+          <code>win.alert()</code> from the iframe. After a cross-origin navigation,
+          Chrome should block the cross-origin <code>win.alert()</code> call entirely.
+          Tests whether split view + cross-origin navigation creates any unexpected access.
+        </div>
+        <div class="step-list">
+          <div class="sl-title">Steps</div>
+          <div class="sl"><div class="sl-n">1</div>Right tab opens as data:,Hello</div>
+          <div class="sl"><div class="sl-n">2</div>After 500ms — navigates to example.com (now cross-origin to iframe)</div>
+          <div class="sl"><div class="sl-n">3</div>After 2s — iframe tries win.alert() — should be blocked</div>
+          <div class="sl"><div class="sl-n">4</div>Check activity log below for result</div>
+        </div>
+        <div class="what-to-check">
+          <div class="check-item vuln"><div class="cl">❌ Vulnerable</div><div class="cv">Dialog fires on example.com tab showing wrong origin — cross-origin access should not work</div></div>
+          <div class="check-item safe"><div class="cl">✅ Expected</div><div class="cv">Console error: cross-origin access blocked. No dialog fires.</div></div>
+        </div>
+        <pre><span class="cm">// Right tab navigates cross-origin — iframe tries to dialog it</span>
+<span class="kw">var</span> win = <span class="kw">window</span>.<span class="fn">open</span>(<span class="str">'data:,Hello'</span>, <span class="str">'_blank'</span>);
+<span class="fn">setTimeout</span>(() => {
+  win.location.href = <span class="str">'https://example.com'</span>; <span class="cm">// cross-origin nav</span>
+  <span class="fn">setTimeout</span>(() => {
+    <span class="kw">try</span> {
+      win.<span class="fn">alert</span>(<span class="str">'SV7: Should be blocked after cross-origin nav'</span>);
+    } <span class="kw">catch</span>(e) {
+      console.<span class="fn">log</span>(<span class="str">'SV7 correctly blocked:'</span>, e.message);
+    }
+  }, <span class="num">2000</span>);
+}, <span class="num">500</span>);</pre>
+        <button class="run-btn" onclick="event.stopPropagation(); runSV(7)">▶ RUN SV7</button>
+      </div>
+    </div>
+
+    <!-- SV08 -->
+    <div class="tc-card">
+      <div class="tc-header" onclick="toggleCard(this)">
+        <div class="tc-num">SV8</div>
+        <div class="tc-name">Blob URL opened in right split tab</div>
+        <span class="tc-tag tag-sv">Blob + Split</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Creates a Blob URL owned by the iframe's origin and opens it in the right split tab.
+          The blob page calls <code>alert()</code> from within itself.
+          Blob URLs are well-defined — their origin equals their creator's origin (this iframe).
+          In split view, checks if the right tab correctly shows iframe origin in dialog.
+        </div>
+        <div class="what-to-check">
+          <div class="check-item vuln"><div class="cl">❌ Vulnerable</div><div class="cv">Blob page dialog shows <code>1.hackeronce.com says</code> — top frame origin leaked despite blob being from iframe</div></div>
+          <div class="check-item safe"><div class="cl">✅ Safe</div><div class="cv">Blob page dialog shows <code>sho3hit.github.io says</code> — correct creator origin</div></div>
+        </div>
+        <pre><span class="cm">// Blob URL created by iframe, opened in right split tab</span>
+<span class="kw">const</span> html = <span class="str">`&lt;script&gt;
+  alert('SV8: Blob in split right tab\\nBlob creator: sho3hit.github.io\\nwin.origin: ' + window.origin);
+&lt;/script&gt;`</span>;
+<span class="kw">const</span> blob = <span class="kw">new</span> <span class="fn">Blob</span>([html], { type: <span class="str">'text/html'</span> });
+<span class="kw">window</span>.<span class="fn">open</span>(URL.<span class="fn">createObjectURL</span>(blob), <span class="str">'_blank'</span>);</pre>
+        <button class="run-btn" onclick="event.stopPropagation(); runSV(8)">▶ RUN SV8</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Activity log -->
+  <div class="log-title">Activity Log</div>
+  <div class="log" id="log"></div>
+
+  <!-- Result summary -->
+  <div class="divider"></div>
+  <div class="log-title">Result Summary</div>
+  <div class="result-box" id="summary">
+No tests run yet. Run each SV test case above and record results here.
+
+Format: SV1 → [dialog title text you saw]
+  </div>
+
+<script>
+  const myOrigin = window.location.origin;
+  document.getElementById('frame-origin').textContent = myOrigin;
+
+  // Get top frame origin via postMessage
+  let topOrigin = '(top frame)';
+  window.parent.postMessage('give-origin', '*');
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'top-origin') {
+      topOrigin = e.data.origin;
+    }
+  });
+
+  function log(msg, type='info') {
+    const el = document.createElement('div');
+    el.className = 'log-entry ' + type;
+    el.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+    const logEl = document.getElementById('log');
+    logEl.appendChild(el);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function toggleCard(header) {
+    const body = header.nextElementSibling;
+    const isOpen = body.classList.contains('open');
+    document.querySelectorAll('.tc-body').forEach(b => b.classList.remove('open'));
+    document.querySelectorAll('.tc-header').forEach(h => h.classList.remove('open'));
+    if (!isOpen) {
+      body.classList.add('open');
+      header.classList.add('open');
+    }
+  }
+
+  function updateSummary(tc, result) {
+    const el = document.getElementById('summary');
+    const lines = el.textContent.split('\n');
+    const existing = lines.findIndex(l => l.startsWith(tc + ' →'));
+    const newLine = tc + ' → ' + result;
+    if (existing >= 0) lines[existing] = newLine;
+    else lines.push(newLine);
+    el.textContent = lines.join('\n');
+  }
+
+  function runSV(n) {
+    log('Running SV' + n + ' ...', 'info');
+
+    switch(n) {
+
+      case 1:
+        window.open(
+          'javascript:alert("SV1 Split View\\nDialog in right tab\\nwin.origin: " + window.origin)',
+          '_blank'
+        );
+        log('SV1: javascript: tab opened. Check dialog title in RIGHT tab.', 'ok');
+        updateSummary('SV1', 'running — check dialog title');
+        break;
+
+      case 2: {
+        const w2 = window.open('data:,Hello', '_blank');
+        log('SV2: data: tab opened in right split. Waiting 500ms...', 'info');
+        setTimeout(() => {
+          w2.alert('SV2: Cross-tab alert\nCalled from LEFT tab iframe\niframe origin: ' + myOrigin);
+          log('SV2: win.alert() called cross-tab. Check RIGHT tab dialog title.', 'ok');
+          updateSummary('SV2', 'running — check dialog title in right tab');
+        }, 500);
+        break;
+      }
+
+      case 3:
+        window.open(
+          'javascript:window.opener && window.opener.alert("SV3: Reverse direction\\nRight tab called alert() on opener\\nThis tab origin: " + window.origin)',
+          '_blank'
+        );
+        log('SV3: Right tab will call alert() on LEFT tab opener. Check LEFT tab dialog.', 'ok');
+        updateSummary('SV3', 'running — check dialog title in LEFT tab');
+        break;
+
+      case 4:
+        window.open('data:,First', '_splitTarget');
+        log('SV4: Named tab "_splitTarget" opened with data:,First. Waiting 800ms...', 'info');
+        setTimeout(() => {
+          window.open(
+            'javascript:alert("SV4: Named target reused\\nwin.origin: " + window.origin)',
+            '_splitTarget'
+          );
+          log('SV4: Same named tab reused with javascript: URL. Check dialog title.', 'ok');
+          updateSummary('SV4', 'running — check dialog title after tab reuse');
+        }, 800);
+        break;
+
+      case 5: {
+        const w5 = window.open('data:,Hello', '_blank');
+        log('SV5: Tab opened. YOU HAVE 3 SECONDS to snap it to split view!', 'err');
+        let countdown = 3;
+        const timer = setInterval(() => {
+          log('SV5: Dialog fires in ' + countdown + 's — snap the tab NOW!', 'info');
+          countdown--;
+          if (countdown < 0) clearInterval(timer);
+        }, 1000);
+        setTimeout(() => {
+          w5.alert('SV5: Post-snap dialog\nDid snapping change origin?\niframe origin: ' + myOrigin);
+          log('SV5: Dialog fired. Check title — same as non-split results?', 'ok');
+          updateSummary('SV5', 'running — compare origin with/without snap');
+        }, 3000);
+        break;
+      }
+
+      case 6: {
+        const w6 = window.open('data:,Hello', '_blank');
+        log('SV6: Opening right tab for confirm() + prompt() test...', 'info');
+        setTimeout(() => {
+          w6.confirm('SV6a: confirm() in split right tab\niframe: ' + myOrigin);
+          w6.prompt('SV6b: prompt() in split right tab\niframe: ' + myOrigin, '');
+          log('SV6: confirm() and prompt() fired. Check dialog titles.', 'ok');
+          updateSummary('SV6', 'running — check confirm and prompt titles');
+        }, 500);
+        break;
+      }
+
+      case 7: {
+        const w7 = window.open('data:,Hello', '_blank');
+        log('SV7: data: tab opened. Navigating to example.com in 500ms...', 'info');
+        setTimeout(() => {
+          w7.location.href = 'https://example.com';
+          log('SV7: Navigated to example.com (cross-origin). Trying win.alert() in 2s...', 'info');
+          setTimeout(() => {
+            try {
+              w7.alert('SV7: Should be blocked after cross-origin nav');
+              log('SV7: ⚠ Dialog fired — cross-origin access NOT blocked (unexpected!)', 'err');
+              updateSummary('SV7', '⚠ UNEXPECTED — dialog fired after cross-origin nav');
+            } catch(e) {
+              log('SV7: ✓ Correctly blocked: ' + e.message, 'ok');
+              updateSummary('SV7', '✓ Blocked correctly — ' + e.message);
+            }
+          }, 2000);
+        }, 500);
+        break;
+      }
+
+      case 8: {
+        const html = `<script>alert('SV8: Blob in split right tab\\nBlob creator: ${myOrigin}\\nwin.origin: ' + window.origin);<\/script>`;
+        const blob = new Blob([html], { type: 'text/html' });
+        window.open(URL.createObjectURL(blob), '_blank');
+        log('SV8: Blob URL tab opened in right split. Check dialog title.', 'ok');
+        updateSummary('SV8', 'running — check dialog title (should show iframe origin)');
+        break;
+      }
+
+      default:
+        log('Unknown test.', 'err');
+    }
+  }
+
+  // Open SV1 card by default
+  document.querySelectorAll('.tc-header')[0].click();
+</script>
+</body>
+</html>
