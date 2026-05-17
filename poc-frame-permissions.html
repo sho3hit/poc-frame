@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Permission Dialog Origin PoC</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;700;800&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #080a0f;
+    --surface: #0f1119;
+    --surface2: #161b26;
+    --border: #1e2535;
+    --accent: #00e5ff;
+    --accent2: #ff4d6d;
+    --accent3: #7b61ff;
+    --warn: #ffb347;
+    --text: #b8c4d8;
+    --text-dim: #4a5570;
+    --text-bright: #eef2ff;
+    --pass: #00e5a0;
+    --fail: #ff4d6d;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+  html, body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--mono); font-size: 13px;
+    line-height: 1.6; min-height: 100vh;
+  }
+  .container { max-width: 560px; margin: 0 auto; padding: 20px 16px 60px; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(123,97,255,0.1); border: 1px solid rgba(123,97,255,0.25);
+    color: var(--accent3); font-size: 10px; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 4px; margin-bottom: 12px;
+  }
+  h1 { font-family: var(--sans); font-size: 22px; font-weight: 800; color: var(--text-bright); line-height: 1.2; letter-spacing: -0.02em; margin-bottom: 4px; }
+  h1 span { color: var(--accent3); }
+
+  .origin-pill {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; margin: 12px 0; font-size: 12px;
+  }
+  .origin-pill .lbl { color: var(--text-dim); flex-shrink: 0; }
+  .origin-pill .val { color: var(--accent3); font-weight: 700; word-break: break-all; }
+
+  /* How to identify box */
+  .identify-box {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; margin: 14px 0;
+  }
+  .identify-box .ibtitle {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--text-dim); font-weight: 700; margin-bottom: 10px;
+  }
+
+  /* Browser prompt diagram */
+  .prompt-diagram {
+    background: #1a1f2e; border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden; margin-bottom: 10px;
+  }
+  .prompt-bar {
+    background: #252a3a; padding: 8px 12px;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .prompt-icon { font-size: 14px; }
+  .prompt-text { font-size: 11px; }
+  .prompt-text .porigin { font-weight: 700; }
+  .prompt-text .porigin.vuln { color: var(--fail); }
+  .prompt-text .porigin.safe { color: var(--pass); }
+  .prompt-text .pdesc { color: var(--text-dim); }
+  .prompt-btns {
+    display: flex; gap: 8px; padding: 8px 12px;
+    justify-content: flex-end;
+  }
+  .prompt-btn {
+    font-size: 10px; padding: 4px 10px; border-radius: 4px;
+    font-family: var(--mono); font-weight: 700;
+  }
+  .prompt-btn.allow { background: rgba(0,229,255,0.1); color: var(--accent); border: 1px solid rgba(0,229,255,0.3); }
+  .prompt-btn.deny { background: rgba(255,77,109,0.08); color: var(--fail); border: 1px solid rgba(255,77,109,0.2); }
+
+  .result-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  .result-item { border-radius: 6px; padding: 8px 10px; font-size: 11px; line-height: 1.5; }
+  .result-item.vuln { background: rgba(255,77,109,0.06); border: 1px solid rgba(255,77,109,0.2); }
+  .result-item.safe { background: rgba(0,229,160,0.05); border: 1px solid rgba(0,229,160,0.15); }
+  .result-item .rl { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; margin-bottom: 3px; }
+  .result-item.vuln .rl { color: var(--fail); }
+  .result-item.safe .rl { color: var(--pass); }
+
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+  .section-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--text-dim); font-weight: 700; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-label::after { content:''; flex:1; height:1px; background:var(--border); }
+
+  /* Permission cards */
+  .perm-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .perm-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .perm-card:hover { border-color: rgba(123,97,255,0.3); }
+
+  .perm-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 14px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; user-select: none;
+  }
+  .perm-head.open { border-bottom: 1px solid var(--border); }
+
+  .perm-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .icon-cam { background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.2); }
+  .icon-mic { background: rgba(255,77,109,0.08); border: 1px solid rgba(255,77,109,0.2); }
+  .icon-notif { background: rgba(255,179,71,0.08); border: 1px solid rgba(255,179,71,0.2); }
+  .icon-geo { background: rgba(0,229,160,0.08); border: 1px solid rgba(0,229,160,0.2); }
+  .icon-clip { background: rgba(123,97,255,0.08); border: 1px solid rgba(123,97,255,0.2); }
+  .icon-screen { background: rgba(200,200,255,0.06); border: 1px solid rgba(200,200,255,0.15); }
+  .icon-midi { background: rgba(255,100,200,0.08); border: 1px solid rgba(255,100,200,0.2); }
+
+  .perm-info { flex: 1; }
+  .perm-name { font-family: var(--sans); font-size: 13px; font-weight: 700; color: var(--text-bright); }
+  .perm-api { font-size: 10px; color: var(--text-dim); margin-top: 1px; }
+
+  .perm-status {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--text-dim); flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .perm-status.granted { background: var(--pass); }
+  .perm-status.denied { background: var(--fail); }
+  .perm-status.prompted { background: var(--warn); }
+
+  .chevron { color: var(--text-dim); font-size: 11px; transition: transform 0.2s; }
+  .perm-head.open .chevron { transform: rotate(180deg); }
+
+  .perm-body { padding: 14px; display: none; }
+  .perm-body.open { display: block; }
+
+  .perm-desc { font-size: 12px; color: var(--text); line-height: 1.7; margin-bottom: 12px; }
+
+  .steps { margin-bottom: 12px; }
+  .steps-title { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); font-weight: 700; margin-bottom: 8px; }
+  .step { display: flex; gap: 8px; margin-bottom: 6px; font-size: 12px; align-items: flex-start; }
+  .step-n {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(123,97,255,0.1); color: var(--accent3);
+    font-size: 9px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 1px;
+  }
+
+  .note {
+    background: rgba(255,179,71,0.06); border: 1px solid rgba(255,179,71,0.15);
+    border-radius: 6px; padding: 9px 12px;
+    font-size: 11px; color: var(--warn); line-height: 1.6; margin-bottom: 10px;
+  }
+  .note::before { content: '⚑ '; }
+
+  pre {
+    background: #050709; border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 12px;
+    font-size: 10px; overflow-x: auto; color: #8a9ab8;
+    line-height: 1.7; margin-bottom: 10px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .kw { color: #7b61ff; } .str { color: #00e5a0; }
+  .fn { color: #00bcd4; } .cm { color: #2e3a50; font-style: italic; }
+  .num { color: var(--warn); }
+
+  .run-btn {
+    width: 100%; padding: 13px;
+    background: linear-gradient(135deg, rgba(123,97,255,0.15), rgba(123,97,255,0.08));
+    border: 1px solid rgba(123,97,255,0.35); color: var(--accent3);
+    font-family: var(--mono); font-size: 12px; font-weight: 700;
+    border-radius: 8px; cursor: pointer;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 48px; transition: background 0.15s;
+  }
+  .run-btn:hover { background: rgba(123,97,255,0.22); }
+  .run-btn:active { background: rgba(123,97,255,0.28); }
+
+  /* Results table */
+  .log-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); font-weight: 700; margin-bottom: 6px; }
+  .log {
+    background: #050709; border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+    min-height: 70px; max-height: 140px; overflow-y: auto;
+    font-size: 10px; line-height: 1.9;
+  }
+  .le { margin-bottom: 1px; }
+  .le.ok { color: var(--pass); }
+  .le.err { color: var(--fail); }
+  .le.info { color: var(--accent2); }
+  .le.warn { color: var(--warn); }
+
+  .results-table {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden; margin-top: 8px;
+  }
+  .rt-row {
+    display: grid; grid-template-columns: 28px 1fr auto auto;
+    align-items: center; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); font-size: 11px; gap: 8px;
+  }
+  .rt-row:last-child { border-bottom: none; }
+  .rt-icon { font-size: 14px; text-align: center; }
+  .rt-name { color: var(--text); }
+  .rt-perm { font-size: 10px; }
+  .rt-perm.granted { color: var(--pass); font-weight: 700; }
+  .rt-perm.denied { color: var(--fail); font-weight: 700; }
+  .rt-perm.pending { color: var(--text-dim); }
+  .rt-result { font-size: 10px; font-weight: 700; text-align: right; }
+  .rt-result.vuln { color: var(--fail); }
+  .rt-result.safe { color: var(--pass); }
+  .rt-result.pending { color: var(--text-dim); }
+
+  /* Record buttons */
+  .record-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;
+  }
+  .rec-btn {
+    padding: 12px 8px; border-radius: 8px; cursor: pointer;
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    -webkit-tap-highlight-color: transparent; text-align: center; line-height: 1.5;
+  }
+  .rec-btn.vuln { background: rgba(255,77,109,0.1); border: 1px solid rgba(255,77,109,0.3); color: var(--fail); }
+  .rec-btn.safe { background: rgba(0,229,160,0.06); border: 1px solid rgba(0,229,160,0.2); color: var(--pass); }
+  .rec-btn span { display: block; font-size: 9px; font-weight: 400; color: var(--text-dim); margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="badge">Permission Dialog · Origin Confusion · Cross-Origin iframe</div>
+  <h1>Permission Dialog <span>Origin Test</span></h1>
+
+  <div class="origin-pill">
+    <span class="lbl">iframe origin:</span>
+    <span class="val" id="frame-origin">loading...</span>
+  </div>
+
+  <!-- How to identify -->
+  <div class="identify-box">
+    <div class="ibtitle">How to identify — where to look</div>
+
+    <!-- Chrome permission prompt diagram -->
+    <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px;">❌ VULNERABLE — Chrome permission prompt shows TOP FRAME origin</div>
+    <div class="prompt-diagram" style="margin-bottom:10px;">
+      <div class="prompt-bar">
+        <div class="prompt-icon">📷</div>
+        <div class="prompt-text">
+          <div class="porigin vuln" id="vuln-origin-label">1.hackeronce.com</div>
+          <div class="pdesc">wants to access your camera</div>
+        </div>
+      </div>
+      <div class="prompt-btns">
+        <div class="prompt-btn deny">Block</div>
+        <div class="prompt-btn allow">Allow</div>
+      </div>
+    </div>
+
+    <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px;">✅ SAFE — prompt shows IFRAME origin (correct)</div>
+    <div class="prompt-diagram">
+      <div class="prompt-bar">
+        <div class="prompt-icon">📷</div>
+        <div class="prompt-text">
+          <div class="porigin safe" id="safe-origin-label">sho3hit.github.io</div>
+          <div class="pdesc">wants to access your camera</div>
+        </div>
+      </div>
+      <div class="prompt-btns">
+        <div class="prompt-btn deny">Block</div>
+        <div class="prompt-btn allow">Allow</div>
+      </div>
+    </div>
+
+    <div style="margin-top:12px; font-size:11px; color:var(--text); line-height:1.7;">
+      The permission prompt appears <strong style="color:var(--accent3)">below the address bar</strong> in Chrome
+      or as a <strong style="color:var(--accent3)">bottom sheet</strong> on iOS Safari.
+      Read the domain name shown — that is your pass/fail indicator.
+    </div>
+  </div>
+
+  <div class="divider"></div>
+  <div class="section-label">Permission Test Cases</div>
+
+  <div class="perm-list">
+
+    <!-- P01: Camera -->
+    <div class="perm-card">
+      <div class="perm-head" onclick="togglePerm(this)">
+        <div class="perm-icon icon-cam">📷</div>
+        <div class="perm-info">
+          <div class="perm-name">Camera Access</div>
+          <div class="perm-api">getUserMedia({video: true})</div>
+        </div>
+        <div class="perm-status" id="status-p01"></div>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="perm-body">
+        <div class="perm-desc">
+          Requests camera access from the cross-origin iframe. The permission prompt
+          should show the iframe's domain (<code>sho3hit.github.io</code>).
+          If it shows <code>1.hackeronce.com</code> — the top frame origin is being spoofed
+          in the permission dialog.
+        </div>
+        <div class="steps">
+          <div class="steps-title">Steps</div>
+          <div class="step"><div class="step-n">1</div>Click Run — permission prompt appears below address bar</div>
+          <div class="step"><div class="step-n">2</div>Read the domain name in the prompt <strong>before clicking anything</strong></div>
+          <div class="step"><div class="step-n">3</div>Click Block (don't actually grant camera access)</div>
+          <div class="step"><div class="step-n">4</div>Record result using buttons below</div>
+        </div>
+        <div class="result-row" style="margin-bottom:10px;">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div>Prompt says:<br><code>1.hackeronce.com wants camera</code></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div>Prompt says:<br><code>sho3hit.github.io wants camera</code></div>
+        </div>
+        <pre><span class="cm">// Triggers camera permission prompt from cross-origin iframe</span>
+navigator.mediaDevices.<span class="fn">getUserMedia</span>({ video: <span class="kw">true</span> })
+  .<span class="fn">then</span>(s => { s.getTracks().<span class="fn">forEach</span>(t => t.<span class="fn">stop</span>()); <span class="fn">log</span>(<span class="str">'P01: Granted'</span>,<span class="str">'ok'</span>); })
+  .<span class="fn">catch</span>(e => <span class="fn">log</span>(<span class="str">'P01: '</span>+e.message,<span class="str">'warn'</span>));</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runPerm('p01')">▶ REQUEST CAMERA PERMISSION</button>
+      </div>
+    </div>
+
+    <!-- P02: Microphone -->
+    <div class="perm-card">
+      <div class="perm-head" onclick="togglePerm(this)">
+        <div class="perm-icon icon-mic">🎤</div>
+        <div class="perm-info">
+          <div class="perm-name">Microphone Access</div>
+          <div class="perm-api">getUserMedia({audio: true})</div>
+        </div>
+        <div class="perm-status" id="status-p02"></div>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="perm-body">
+        <div class="perm-desc">
+          Requests microphone access. Separate permission from camera — browser
+          shows an independent prompt. The initiating origin is the iframe.
+          Check if the prompt correctly attributes it to <code>sho3hit.github.io</code>.
+        </div>
+        <div class="result-row" style="margin-bottom:10px;">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div>Prompt says:<br><code>1.hackeronce.com wants mic</code></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div>Prompt says:<br><code>sho3hit.github.io wants mic</code></div>
+        </div>
+        <pre>navigator.mediaDevices.<span class="fn">getUserMedia</span>({ audio: <span class="kw">true</span> })
+  .<span class="fn">then</span>(s => { s.getTracks().<span class="fn">forEach</span>(t => t.<span class="fn">stop</span>()); <span class="fn">log</span>(<span class="str">'P02: Granted'</span>,<span class="str">'ok'</span>); })
+  .<span class="fn">catch</span>(e => <span class="fn">log</span>(<span class="str">'P02: '</span>+e.message,<span class="str">'warn'</span>));</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runPerm('p02')">▶ REQUEST MICROPHONE PERMISSION</button>
+      </div>
+    </div>
+
+    <!-- P03: Camera + Mic combined -->
+    <div class="perm-card">
+      <div class="perm-head" onclick="togglePerm(this)">
+        <div class="perm-icon icon-cam">🎥</div>
+        <div class="perm-info">
+          <div class="perm-name">Camera + Microphone Combined</div>
+          <div class="perm-api">getUserMedia({video: true, audio: true})</div>
+        </div>
+        <div class="perm-status" id="status-p03"></div>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="perm-body">
+        <div class="perm-desc">
+          Requests both camera and microphone simultaneously. Chrome shows a combined
+          prompt. Tests whether combined permission requests use a different
+          origin-attribution code path than individual requests.
+        </div>
+        <div class="result-row" style="margin-bottom:10px;">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div>Combined prompt shows:<br><code>1.hackeronce.com</code></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div>Combined prompt shows:<br><code>sho3hit.github.io</code></div>
+        </div>
+        <pre>navigator.mediaDevices.<span class="fn">getUserMedia</span>({ video: <span class="kw">true</span>, audio: <span class="kw">true</span> })
+  .<span class="fn">then</span>(s => { s.getTracks().<span class="fn">forEach</span>(t => t.<span class="fn">stop</span>()); <span class="fn">log</span>(<span class="str">'P03: Granted'</span>,<span class="str">'ok'</span>); })
+  .<span class="fn">catch</span>(e => <span class="fn">log</span>(<span class="str">'P03: '</span>+e.message,<span class="str">'warn'</span>));</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runPerm('p03')">▶ REQUEST CAMERA + MIC PERMISSION</button>
+      </div>
+    </div>
+
+    <!-- P04: Notifications -->
+    <div class="perm-card">
+      <div class="perm-head" onclick="togglePerm(this)">
+        <div class="perm-icon icon-notif">🔔</div>
+        <div class="perm-info">
+          <div class="perm-name">Notification Permission</div>
+          <div class="perm-api">Notification.requestPermission()</div>
+        </div>
+        <div class="perm-status" id="status-p04"></div>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="perm-body">
+        <div class="perm-desc">
+          Requests notification permission from within the cross-origin iframe.
+          This is a high-value test — notification permission prompts are
+          frequently targeted in phishing because they appear very prominently.
+          If origin is spoofed here, attacker could trick user into granting
+          notifications to the top frame while thinking it's the iframe.
+        </div>
+        <div class="note">Notification permission in iframes requires the <code>allow="notifications"</code> attribute on the iframe tag — already set in the updated parent-page.html.</div>
+        <div class="result-row" style="margin-bottom:10px;">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div>Prompt shows:<br><code>1.hackeronce.com wants notifications</code></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div>Prompt shows:<br><code>sho3hit.github.io wants notifications</code></div>
+        </div>
+        <pre>Notification.<span class="fn">requestPermission</span>()
+  .<span class="fn">then</span>(r => <span class="fn">log</span>(<span class="str">'P04: Notification result: '</span>+r, r===<span class="str">'granted'</span>?<span class="str">'ok'</span>:<span class="str">'warn'</span>))
+  .<span class="fn">catch</span>(e => <span class="fn">log</span>(<span class="str">'P04: '</span>+e.message,<span class="str">'err'</span>));</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runPerm('p04')">▶ REQUEST NOTIFICATION PERMISSION</button>
+      </div>
+    </div>
+
+    <!-- P05: Geolocation -->
+    <div class="perm-card">
+      <div class="perm-head" onclick="togglePerm(this)">
+        <div class="perm-icon icon-geo">📍</div>
+        <div class="perm-info">
+          <div class="perm-name">Geolocation Permission</div>
+          <div class="perm-api">navigator.geolocation.getCurrentPosition()</div>
+        </div>
+        <div class="perm-status" id="status-p05"></div>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="perm-body">
+        <div class="perm-desc">
+          Requests location access from the cross-origin iframe. Geolocation prompts
+          are security-critical — showing the wrong origin could let an attacker
+          trick a user into sharing their location with the wrong domain.
+          Requires <code>allow="geolocation"</code> on the iframe.
+        </div>
+        <div class="result-row" style="margin-bottom:10px;">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div>Prompt shows:<br><code>1.hackeronce.com wants location</code></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div>Prompt shows:<br><code>sho3hit.github.io wants location</code></div>
+        </div>
+        <pre>navigator.geolocation.<span class="fn">getCurrentPosition</span>(
+  pos => <span class="fn">log</span>(<span class="str">'P05: Location granted'</span>, <span class="str">'ok'</span>),
+  err => <span class="fn">log</span>(<span class="str">'P05: '</span>+err.message, <span class="str">'warn'</span>)
+);</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runPerm('p05')">▶ REQUEST LOCATION PERMISSION</button>
+      </div>
+    </div>
+
+    <!-- P06: Clipboard Read -->
+    <div class="perm-card">
+      <div class="perm-head" onclick="togglePerm(this)">
+        <div class="perm-icon icon-clip">📋</div>
+        <div class="perm-info">
+          <div class="perm-name">Clipboard Read Permission</div>
+          <div class="perm-api">navigator.clipboard.readText()</div>
+        </div>
+        <div class="perm-status" id="status-p06"></div>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="perm-body">
+        <div class="perm-desc">
+          Requests clipboard read access. This is a high-impact permission — clipboard
+          may contain passwords, tokens, or personal data. If origin spoof is present,
+          user may unknowingly grant clipboard access to the top frame domain
+          thinking it's a trusted iframe.
+        </div>
+        <div class="result-row" style="margin-bottom:10px;">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div>Prompt shows:<br><code>1.hackeronce.com wants clipboard</code></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div>Prompt shows:<br><code>sho3hit.github.io wants clipboard</code></div>
+        </div>
+        <pre>navigator.clipboard.<span class="fn">readText</span>()
+  .<span class="fn">then</span>(t => <span class="fn">log</span>(<span class="str">'P06: Clipboard read granted'</span>,<span class="str">'ok'</span>))
+  .<span class="fn">catch</span>(e => <span class="fn">log</span>(<span class="str">'P06: '</span>+e.message,<span class="str">'warn'</span>));</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runPerm('p06')">▶ REQUEST CLIPBOARD READ</button>
+      </div>
+    </div>
+
+    <!-- P07: Clipboard Write -->
+    <div class="perm-card">
+      <div class="perm-head" onclick="togglePerm(this)">
+        <div class="perm-icon icon-clip">📝</div>
+        <div class="perm-info">
+          <div class="perm-name">Clipboard Write Permission</div>
+          <div class="perm-api">navigator.clipboard.writeText()</div>
+        </div>
+        <div class="perm-status" id="status-p07"></div>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="perm-body">
+        <div class="perm-desc">
+          Requests clipboard write access from the iframe. Unlike clipboard read,
+          write access typically doesn't require a user prompt in Chrome (granted
+          automatically with user gesture). Tests whether the permission API
+          check itself attributes to correct origin.
+        </div>
+        <div class="note">Write may succeed silently without a prompt — check the activity log for result.</div>
+        <div class="result-row" style="margin-bottom:10px;">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div>If prompt appears — shows <code>1.hackeronce.com</code></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div>Prompt shows <code>sho3hit.github.io</code> or write succeeds silently</div>
+        </div>
+        <pre>navigator.clipboard.<span class="fn">writeText</span>(<span class="str">'P07 test — origin: '</span>+<span class="kw">window</span>.origin)
+  .<span class="fn">then</span>(() => <span class="fn">log</span>(<span class="str">'P07: Write succeeded (no prompt needed)'</span>,<span class="str">'ok'</span>))
+  .<span class="fn">catch</span>(e => <span class="fn">log</span>(<span class="str">'P07: '</span>+e.message,<span class="str">'warn'</span>));</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runPerm('p07')">▶ REQUEST CLIPBOARD WRITE</button>
+      </div>
+    </div>
+
+    <!-- P08: Screen Capture -->
+    <div class="perm-card">
+      <div class="perm-head" onclick="togglePerm(this)">
+        <div class="perm-icon icon-screen">🖥️</div>
+        <div class="perm-info">
+          <div class="perm-name">Screen Capture Permission</div>
+          <div class="perm-api">navigator.mediaDevices.getDisplayMedia()</div>
+        </div>
+        <div class="perm-status" id="status-p08"></div>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="perm-body">
+        <div class="perm-desc">
+          Requests screen capture access. Chrome shows a screen picker dialog
+          that includes the requesting origin. This is a very sensitive permission —
+          wrong origin shown here could trick user into sharing their screen with
+          an unintended domain. Requires <code>allow="display-capture"</code>.
+        </div>
+        <div class="note">Screen capture picker opens a separate system dialog. The origin appears in the Chrome dialog header above the picker.</div>
+        <div class="result-row" style="margin-bottom:10px;">
+          <div class="result-item vuln"><div class="rl">❌ Vulnerable</div>Screen picker dialog header shows <code>1.hackeronce.com</code></div>
+          <div class="result-item safe"><div class="rl">✅ Safe</div>Dialog header shows <code>sho3hit.github.io</code></div>
+        </div>
+        <pre>navigator.mediaDevices.<span class="fn">getDisplayMedia</span>({ video: <span class="kw">true</span> })
+  .<span class="fn">then</span>(s => { s.getTracks().<span class="fn">forEach</span>(t => t.<span class="fn">stop</span>()); <span class="fn">log</span>(<span class="str">'P08: Screen granted'</span>,<span class="str">'ok'</span>); })
+  .<span class="fn">catch</span>(e => <span class="fn">log</span>(<span class="str">'P08: '</span>+e.message,<span class="str">'warn'</span>));</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runPerm('p08')">▶ REQUEST SCREEN CAPTURE</button>
+      </div>
+    </div>
+
+    <!-- P09: Permissions API Query -->
+    <div class="perm-card">
+      <div class="perm-head" onclick="togglePerm(this)">
+        <div class="perm-icon icon-midi">🔍</div>
+        <div class="perm-info">
+          <div class="perm-name">Permissions API State Query</div>
+          <div class="perm-api">navigator.permissions.query()</div>
+        </div>
+        <div class="perm-status" id="status-p09"></div>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="perm-body">
+        <div class="perm-desc">
+          Queries the current permission state for multiple permission types using
+          the Permissions API — no prompt shown. This checks what origin Chrome
+          associates internally with each permission query from the cross-origin iframe.
+          Result appears in the activity log — checks if query is attributed to iframe
+          or top frame internally.
+        </div>
+        <div class="note">No visible prompt for this test — all results appear in the Activity Log below.</div>
+        <pre><span class="cm">// Query permission states — no prompt, results in log</span>
+<span class="kw">const</span> perms = [<span class="str">'camera'</span>,<span class="str">'microphone'</span>,<span class="str">'geolocation'</span>,<span class="str">'notifications'</span>,<span class="str">'clipboard-read'</span>];
+<span class="kw">for</span> (<span class="kw">const</span> p <span class="kw">of</span> perms) {
+  navigator.permissions.<span class="fn">query</span>({name: p})
+    .<span class="fn">then</span>(r => <span class="fn">log</span>(<span class="str">'P09 '</span>+p+<span class="str">': '</span>+r.state, r.state===<span class="str">'granted'</span>?<span class="str">'ok'</span>:<span class="str">'info'</span>))
+    .<span class="fn">catch</span>(e => <span class="fn">log</span>(<span class="str">'P09 '</span>+p+<span class="str">' error: '</span>+e.message,<span class="str">'warn'</span>));
+}</pre>
+        <button class="run-btn" onclick="event.stopPropagation();runPerm('p09')">▶ QUERY ALL PERMISSION STATES</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Activity Log -->
+  <div class="log-label">Activity Log</div>
+  <div class="log" id="log"></div>
+
+  <div class="divider"></div>
+
+  <!-- Results Summary -->
+  <div class="section-label">Results Summary</div>
+  <div class="results-table">
+    <div class="rt-row"><span class="rt-icon">📷</span><span class="rt-name">Camera</span><span class="rt-perm pending" id="perm-p01">—</span><span class="rt-result pending" id="r-p01">pending</span></div>
+    <div class="rt-row"><span class="rt-icon">🎤</span><span class="rt-name">Microphone</span><span class="rt-perm pending" id="perm-p02">—</span><span class="rt-result pending" id="r-p02">pending</span></div>
+    <div class="rt-row"><span class="rt-icon">🎥</span><span class="rt-name">Camera + Mic</span><span class="rt-perm pending" id="perm-p03">—</span><span class="rt-result pending" id="r-p03">pending</span></div>
+    <div class="rt-row"><span class="rt-icon">🔔</span><span class="rt-name">Notifications</span><span class="rt-perm pending" id="perm-p04">—</span><span class="rt-result pending" id="r-p04">pending</span></div>
+    <div class="rt-row"><span class="rt-icon">📍</span><span class="rt-name">Geolocation</span><span class="rt-perm pending" id="perm-p05">—</span><span class="rt-result pending" id="r-p05">pending</span></div>
+    <div class="rt-row"><span class="rt-icon">📋</span><span class="rt-name">Clipboard Read</span><span class="rt-perm pending" id="perm-p06">—</span><span class="rt-result pending" id="r-p06">pending</span></div>
+    <div class="rt-row"><span class="rt-icon">📝</span><span class="rt-name">Clipboard Write</span><span class="rt-perm pending" id="perm-p07">—</span><span class="rt-result pending" id="r-p07">pending</span></div>
+    <div class="rt-row"><span class="rt-icon">🖥️</span><span class="rt-name">Screen Capture</span><span class="rt-perm pending" id="perm-p08">—</span><span class="rt-result pending" id="r-p08">pending</span></div>
+    <div class="rt-row"><span class="rt-icon">🔍</span><span class="rt-name">Permissions Query</span><span class="rt-perm pending" id="perm-p09">—</span><span class="rt-result pending" id="r-p09">auto</span></div>
+  </div>
+
+  <!-- Record result buttons -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:10px;">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-dim);font-weight:700;margin-bottom:8px;">
+      After each permission prompt — tap what you saw:
+    </div>
+    <div class="record-row">
+      <button class="rec-btn vuln" onclick="recordResult('vuln')">
+        ❌ Saw top frame origin
+        <span id="vuln-label-btn">1.hackeronce.com</span>
+      </button>
+      <button class="rec-btn safe" onclick="recordResult('safe')">
+        ✅ Saw iframe origin
+        <span id="safe-label-btn">sho3hit.github.io</span>
+      </button>
+    </div>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:8px;text-align:center;">
+      Last test run: <span id="last-tc" style="color:var(--accent3)">none</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const myOrigin = window.location.origin;
+  document.getElementById('frame-origin').textContent = myOrigin;
+  document.getElementById('safe-label-btn').textContent = myOrigin;
+  document.getElementById('safe-origin-label').textContent = myOrigin;
+
+  // Get top frame origin via postMessage
+  let topOrigin = '1.hackeronce.com';
+  try { window.parent.postMessage('give-origin', '*'); } catch(e){}
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'top-origin') {
+      topOrigin = e.data.origin;
+      document.getElementById('vuln-origin-label').textContent = new URL(topOrigin).hostname;
+      document.getElementById('vuln-label-btn').textContent = new URL(topOrigin).hostname;
+    }
+  });
+
+  let lastTC = null;
+
+  function log(msg, type='info') {
+    const el = document.createElement('div');
+    el.className = 'le ' + type;
+    el.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+    const logEl = document.getElementById('log');
+    logEl.appendChild(el);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function togglePerm(header) {
+    const body = header.nextElementSibling;
+    const isOpen = body.classList.contains('open');
+    document.querySelectorAll('.perm-body').forEach(b => b.classList.remove('open'));
+    document.querySelectorAll('.perm-head').forEach(h => h.classList.remove('open'));
+    if (!isOpen) { body.classList.add('open'); header.classList.add('open'); }
+  }
+
+  function setStatus(id, state) {
+    const el = document.getElementById('status-' + id);
+    if (el) { el.className = 'perm-status ' + state; }
+    const permEl = document.getElementById('perm-' + id);
+    if (permEl) { permEl.textContent = state; permEl.className = 'rt-perm ' + state; }
+  }
+
+  function recordResult(result) {
+    if (!lastTC) { log('Run a test first, then record result.', 'err'); return; }
+    const el = document.getElementById('r-' + lastTC);
+    if (el) {
+      el.textContent = result === 'vuln' ? '❌ VULN' : '✅ SAFE';
+      el.className = 'rt-result ' + result;
+      log('Recorded ' + lastTC.toUpperCase() + ': ' + (result === 'vuln' ? 'VULNERABLE — top frame origin shown!' : 'SAFE — iframe origin shown correctly'), result === 'vuln' ? 'err' : 'ok');
+    }
+    lastTC = null;
+    document.getElementById('last-tc').textContent = 'none';
+  }
+
+  function runPerm(tc) {
+    lastTC = tc;
+    document.getElementById('last-tc').textContent = tc.toUpperCase();
+    log('Running ' + tc.toUpperCase() + ' — watch the permission prompt...', 'info');
+
+    try {
+      switch(tc) {
+
+        case 'p01':
+          navigator.mediaDevices.getUserMedia({ video: true })
+            .then(s => { s.getTracks().forEach(t => t.stop()); setStatus('p01','granted'); log('P01: Camera granted', 'ok'); })
+            .catch(e => { setStatus('p01','denied'); log('P01: ' + e.message, 'warn'); });
+          break;
+
+        case 'p02':
+          navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(s => { s.getTracks().forEach(t => t.stop()); setStatus('p02','granted'); log('P02: Microphone granted', 'ok'); })
+            .catch(e => { setStatus('p02','denied'); log('P02: ' + e.message, 'warn'); });
+          break;
+
+        case 'p03':
+          navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(s => { s.getTracks().forEach(t => t.stop()); setStatus('p03','granted'); log('P03: Camera+Mic granted', 'ok'); })
+            .catch(e => { setStatus('p03','denied'); log('P03: ' + e.message, 'warn'); });
+          break;
+
+        case 'p04':
+          if (!('Notification' in window)) { log('P04: Notifications not supported', 'err'); break; }
+          Notification.requestPermission()
+            .then(r => { setStatus('p04', r === 'granted' ? 'granted' : 'denied'); log('P04: Notification result: ' + r, r === 'granted' ? 'ok' : 'warn'); })
+            .catch(e => { setStatus('p04','denied'); log('P04: ' + e.message, 'err'); });
+          break;
+
+        case 'p05':
+          navigator.geolocation.getCurrentPosition(
+            pos => { setStatus('p05','granted'); log('P05: Location granted — lat: ' + pos.coords.latitude.toFixed(3), 'ok'); },
+            err => { setStatus('p05','denied'); log('P05: ' + err.message, 'warn'); }
+          );
+          break;
+
+        case 'p06':
+          navigator.clipboard.readText()
+            .then(t => { setStatus('p06','granted'); log('P06: Clipboard read granted', 'ok'); })
+            .catch(e => { setStatus('p06','denied'); log('P06: ' + e.message, 'warn'); });
+          break;
+
+        case 'p07':
+          navigator.clipboard.writeText('P07 origin test: ' + myOrigin)
+            .then(() => { setStatus('p07','granted'); log('P07: Clipboard write succeeded (no prompt needed)', 'ok'); })
+            .catch(e => { setStatus('p07','denied'); log('P07: ' + e.message, 'warn'); });
+          break;
+
+        case 'p08':
+          navigator.mediaDevices.getDisplayMedia({ video: true })
+            .then(s => { s.getTracks().forEach(t => t.stop()); setStatus('p08','granted'); log('P08: Screen capture granted', 'ok'); })
+            .catch(e => { setStatus('p08','denied'); log('P08: ' + e.message, 'warn'); });
+          break;
+
+        case 'p09': {
+          const perms = ['camera','microphone','geolocation','notifications','clipboard-read'];
+          let done = 0;
+          for (const p of perms) {
+            navigator.permissions.query({name: p})
+              .then(r => { log('P09 ' + p + ': ' + r.state, r.state === 'granted' ? 'ok' : 'info'); done++; if(done===perms.length){setStatus('p09','granted');} })
+              .catch(e => { log('P09 ' + p + ': ' + e.message, 'warn'); done++; });
+          }
+          document.getElementById('r-p09').textContent = 'see log';
+          document.getElementById('r-p09').className = 'rt-result info';
+          lastTC = null;
+          break;
+        }
+
+        default:
+          log('Unknown permission test: ' + tc, 'err');
+      }
+    } catch(e) {
+      log('Uncaught error in ' + tc + ': ' + e.message, 'err');
+    }
+  }
+
+  // Open first card
+  document.querySelectorAll('.perm-head')[0].click();
+</script>
+</body>
+</html>
